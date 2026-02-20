@@ -1,10 +1,25 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-// Fix: Strictly follow named parameter initialization for GoogleGenAI.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazy initialization to prevent crash if API_KEY is missing
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  const apiKey = (import.meta as any).env.VITE_GEMINI_API_KEY || (import.meta as any).env.VITE_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY não encontrada. As funções de IA estarão desativadas.");
+    return null;
+  }
+  if (!aiInstance) {
+    aiInstance = new GoogleGenAI({ apiKey });
+  }
+  return aiInstance;
+};
 
 export const analyzeMessageSafety = async (text: string): Promise<{ isSafe: boolean; reason?: string }> => {
+  const ai = getAI();
+  if (!ai) return { isSafe: true };
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -24,15 +39,17 @@ export const analyzeMessageSafety = async (text: string): Promise<{ isSafe: bool
       }
     });
 
-    // Fix: Directly use the .text property from GenerateContentResponse as per guidelines.
     return JSON.parse(response.text || '{"isSafe": true}');
   } catch (error) {
     console.error("Gemini safety check failed", error);
-    return { isSafe: true }; // Fallback to safe if API fails
+    return { isSafe: true };
   }
 };
 
 export const suggestCategory = async (description: string): Promise<string> => {
+  const ai = getAI();
+  if (!ai) return "Outros";
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
@@ -47,12 +64,14 @@ export const suggestCategory = async (description: string): Promise<string> => {
 };
 
 export const summarizeAuditLog = async (action: string, details: string): Promise<string> => {
+  const ai = getAI();
+  if (!ai) return action;
+
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Gere uma breve descrição (máximo 15 palavras) para um log de auditoria. Ação: ${action}. Detalhes: ${details}`,
     });
-    // Fix: Directly use the .text property from GenerateContentResponse as per guidelines.
     return response.text || action;
   } catch {
     return action;

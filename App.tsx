@@ -1,7 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Ticket, Payment, Message, UserRole, TicketStatus, PaymentStatus, AppNotification } from './types';
-import { db } from './services/mockDb';
+import { User, Ticket, Payment, Message, UserRole, TicketStatus, PaymentStatus, AppNotification, AuditLog } from './types';
+import { auth } from './services/firebase';
+import { database } from './services/database';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged 
+} from 'firebase/auth';
 import { PLATFORM_FEE_PCT, TICKET_STATUS_LABELS, CATEGORIES, PAYMENT_STATUS_LABELS } from './constants';
 import { analyzeMessageSafety, summarizeAuditLog, suggestCategory } from './services/gemini';
 
@@ -74,6 +81,205 @@ const Badge = ({ children, status }: { children: React.ReactNode, status: string
 
 // --- App Pages ---
 
+const TicketDetailView = ({ 
+  ticket, 
+  currentUser, 
+  onBack, 
+  onSendMessage, 
+  onSetBudget, 
+  onSubmitProof, 
+  onConfirmPayment, 
+  onRejectPayment, 
+  onStartExecution, 
+  onDispute, 
+  onFinish, 
+  onRate,
+  payment
+}: any) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [client, setClient] = useState<User | null>(null);
+
+  useEffect(() => {
+    const unsub = database.chats.listenMessages(ticket.id, setMessages);
+    database.users.getById(ticket.clientId).then(setClient);
+    return () => unsub();
+  }, [ticket.id]);
+
+  return (
+    <div className="grid lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <Card>
+          <div className="flex justify-between items-center mb-4">
+            <Button variant="outline" onClick={onBack}>← Voltar</Button>
+            <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
+          </div>
+          <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
+          <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap mb-4">{ticket.description}</p>
+          {ticket.imageUrl && (
+            <div className="mt-4">
+              <p className="text-xs font-bold text-slate-400 uppercase mb-2">Anexo do Problema:</p>
+              <img src={ticket.imageUrl} alt="Problema" className="max-w-full h-auto rounded-lg border shadow-sm max-h-64 object-contain" />
+            </div>
+          )}
+        </Card>
+
+        <Card className="flex flex-col h-[500px]">
+          <h3 className="font-bold text-lg mb-4">Chat Interno (Seguro)</h3>
+          <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+            {messages.map(m => (
+              <div key={m.id} className={`flex ${m.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] p-3 rounded-lg ${m.senderId === currentUser.uid ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
+                  <p className="text-xs opacity-75 mb-1 font-bold">{m.senderRole.toUpperCase()}</p>
+                  <p className="text-sm">{m.text}</p>
+                  <p className="text-[10px] text-right mt-1 opacity-50">{new Date(m.createdAt).toLocaleTimeString()}</p>
+                </div>
+              </div>
+            ))}
+            {messages.length === 0 && <p className="text-center text-slate-400 italic mt-10">Inicie a conversa para alinhar o atendimento.</p>}
+          </div>
+          <form onSubmit={(e: any) => {
+            e.preventDefault();
+            onSendMessage(ticket.id, e.target.msg.value);
+            e.target.reset();
+          }} className="flex gap-2 border-t pt-4">
+            <input name="msg" placeholder="Digite sua mensagem..." className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
+            <Button type="submit">Enviar</Button>
+          </form>
+        </Card>
+      </div>
+
+      <div className="space-y-6">
+        {(currentUser.role === 'admin' || currentUser.role === 'tech') && client && (
+          <Card className="border-blue-100 bg-blue-50/30">
+            <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+              👤 Informações do Cliente
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Email:</span>
+                <span className="font-medium">{client.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Membro desde:</span>
+                <span className="font-medium">{new Date(client.createdAt).toLocaleDateString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">ID do Usuário:</span>
+                <span className="font-mono text-[10px]">{client.uid}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        <Card>
+          <h3 className="font-bold text-lg mb-4">Informações de Pagamento</h3>
+          {!payment && currentUser.role === 'tech' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 italic">Defina o orçamento para o cliente realizar o pagamento via PIX.</p>
+              <input type="number" id="budgetInput" placeholder="Valor Total (R$)" className="w-full p-2 border rounded" />
+              <Button className="w-full" onClick={() => {
+                const val = parseFloat((document.getElementById('budgetInput') as HTMLInputElement).value);
+                if (val > 0) onSetBudget(ticket.id, val);
+              }}>Enviar Orçamento</Button>
+            </div>
+          )}
+
+          {!payment && currentUser.role === 'client' && (
+            <p className="text-slate-500 italic">Aguardando orçamento do técnico.</p>
+          )}
+
+          {payment && (
+            <div className="space-y-4">
+              <div className="flex justify-between text-sm">
+                <span>Valor Total:</span>
+                <span className="font-bold">R$ {payment.amountTotal.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-slate-500">
+                <span>Status:</span>
+                <Badge status={payment.status}>{PAYMENT_STATUS_LABELS[payment.status]}</Badge>
+              </div>
+
+              {currentUser.role === 'client' && payment.status === 'pending' && (
+                <div className="pt-4 border-t">
+                  <p className="text-xs font-bold text-blue-700 mb-2 uppercase">Instruções:</p>
+                  <p className="text-sm mb-4">Envie o PIX para a chave do Admin (PIX: financeiro@remototech.com) e anexe o comprovante abaixo.</p>
+                  <textarea id="proofInput" placeholder="Cole o texto do comprovante aqui..." className="w-full p-2 border rounded h-20 text-sm mb-2" />
+                  <div className="mb-4">
+                    <label className="text-xs font-bold opacity-80 block mb-1">Anexar Print do Comprovante:</label>
+                    <input type="file" id="proofImageInput" accept="image/*" className="text-xs" />
+                  </div>
+                  <Button className="w-full" onClick={async () => {
+                    const proof = (document.getElementById('proofInput') as HTMLTextAreaElement).value;
+                    const imageFile = (document.getElementById('proofImageInput') as HTMLInputElement).files?.[0];
+                    if (proof || imageFile) await onSubmitProof(payment.id, proof, imageFile);
+                  }}>Enviar Comprovante</Button>
+                </div>
+              )}
+
+              {currentUser.role === 'client' && payment.status === 'proof_submitted' && (
+                <p className="bg-amber-50 text-amber-800 p-3 rounded text-sm italic">Comprovante enviado! Aguarde o Admin confirmar para liberar o técnico.</p>
+              )}
+
+              {currentUser.role === 'tech' && payment.status === 'confirmed' && (
+                <div className="bg-green-100 text-green-800 p-3 rounded">
+                  <p className="text-sm font-bold">Pagamento Confirmado!</p>
+                  <p className="text-xs">Você receberá R$ {payment.techReceives.toFixed(2)} após a conclusão.</p>
+                  <Button className="w-full mt-2" onClick={() => onStartExecution(ticket.id)}>Iniciar Execução</Button>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card className="bg-slate-900 text-white">
+          <h3 className="font-bold mb-2">🛡️ Regras de Segurança</h3>
+          <ul className="text-xs space-y-2 opacity-80">
+            <li>• Jamais compartilhe WhatsApp ou redes sociais no chat.</li>
+            <li>• O pagamento deve ser feito exclusivamente via plataforma.</li>
+            <li>• O descumprimento gera suspensão imediata da conta.</li>
+          </ul>
+        </Card>
+
+        {ticket.status === 'in_progress' && currentUser.role === 'client' && (
+          <Card className="border-red-200">
+            <h3 className="font-bold text-red-600 mb-2">Problemas com o serviço?</h3>
+            <p className="text-xs text-slate-500 mb-4">Se o técnico não estiver cumprindo o combinado, você pode abrir uma disputa.</p>
+            <Button variant="danger" className="w-full text-sm" onClick={() => {
+              const reason = prompt("Descreva o motivo da disputa:");
+              if (reason) onDispute(ticket.id, reason);
+            }}>Abrir Disputa</Button>
+          </Card>
+        )}
+
+        {ticket.status === 'in_progress' && currentUser.role === 'tech' && (
+          <Button className="w-full" onClick={() => onFinish(ticket.id)}>Finalizar Atendimento</Button>
+        )}
+
+        {ticket.status === 'completed' && currentUser.role === 'client' && !ticket.rating && (
+          <Card className="bg-amber-50 border-amber-200">
+            <h3 className="font-bold text-amber-800 mb-2">Avalie o Técnico</h3>
+            <p className="text-xs text-amber-700 mb-4">Sua avaliação ajuda a manter a qualidade da plataforma.</p>
+            <div className="space-y-4">
+              <StarRating rating={0} onRate={(r) => {
+                const comment = prompt("Deixe um comentário (opcional):");
+                onRate(ticket.id, r, comment || '');
+              }} />
+            </div>
+          </Card>
+        )}
+
+        {ticket.rating && (
+          <Card className="bg-slate-50">
+            <h3 className="font-bold mb-2">Avaliação do Cliente</h3>
+            <StarRating rating={ticket.rating.score} readonly />
+            {ticket.rating.comment && <p className="text-sm italic mt-2 text-slate-600">"{ticket.rating.comment}"</p>}
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const LandingPage = ({ onStart }: { onStart: () => void }) => (
   <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-6 text-center">
     <div className="max-w-3xl">
@@ -91,17 +297,50 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
   const [role, setRole] = useState<UserRole>('client');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRegister) {
-      const newUser: User = { uid: `u-${Date.now()}`, email, role, status: 'active', createdAt: Date.now() };
-      db.users.add(newUser);
-      onLogin(newUser);
-    } else {
-      const user = db.users.getAll().find(u => u.email === email);
-      if (user) onLogin(user);
-      else alert("Usuário não encontrado.");
+    setLoading(true);
+    try {
+      if (isRegister) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const finalRole = email === 'messi@bol.com.br' ? 'admin' : role;
+        const newUser: User = { 
+          uid: userCredential.user.uid, 
+          email, 
+          role: finalRole, 
+          status: 'active', 
+          createdAt: Date.now() 
+        };
+        await database.users.save(newUser);
+        onLogin(newUser);
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        let user = await database.users.getById(userCredential.user.uid);
+        
+        // Fallback: If user exists in Auth but not in Firestore (e.g. pre-existing users)
+        if (!user) {
+          let detectedRole: UserRole = 'client';
+          if (email === 'messi@bol.com.br') detectedRole = 'admin';
+          else if (email === 'tecnico@teste.com') detectedRole = 'tech';
+          
+          user = {
+            uid: userCredential.user.uid,
+            email,
+            role: detectedRole,
+            status: 'active',
+            createdAt: Date.now()
+          };
+          await database.users.save(user);
+        }
+        
+        onLogin(user);
+      }
+    } catch (error: any) {
+      alert(`Erro: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -133,7 +372,9 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
               </select>
             </div>
           )}
-          <Button type="submit" className="w-full">{isRegister ? 'Cadastrar' : 'Entrar'}</Button>
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? 'Processando...' : (isRegister ? 'Cadastrar' : 'Entrar')}
+          </Button>
         </form>
         <p className="mt-4 text-center text-sm">
           {isRegister ? 'Já tem conta?' : 'Novo aqui?'} 
@@ -155,8 +396,10 @@ export default function App() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -167,19 +410,44 @@ export default function App() {
     });
   };
 
-  // Navigation and Refresh
-  const refreshData = () => {
-    if (!currentUser) return;
-    setTickets(db.tickets.getAll());
-    setPayments(db.payments.getAll());
-    setNotifications(db.notifications.getAll(currentUser.uid));
-  };
-
+  // Auth State Listener
   useEffect(() => {
-    refreshData();
-  }, [currentUser, view]);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        const user = await database.users.getById(firebaseUser.uid);
+        setCurrentUser(user);
+        if (user) setView('dashboard');
+      } else {
+        setCurrentUser(null);
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const handleLogout = () => {
+  // Real-time Listeners
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const unsubTickets = database.tickets.listenAll(setTickets);
+    const unsubPayments = database.payments.listenAll(setPayments);
+    const unsubNotifications = database.notifications.listen(currentUser.uid, setNotifications);
+    
+    let unsubLogs: () => void = () => {};
+    if (currentUser.role === 'admin') {
+      unsubLogs = database.logs.listenAll(setLogs);
+    }
+
+    return () => {
+      unsubTickets();
+      unsubPayments();
+      unsubNotifications();
+      unsubLogs();
+    };
+  }, [currentUser]);
+
+  const handleLogout = async () => {
+    await signOut(auth);
     setCurrentUser(null);
     setView('landing');
   };
@@ -208,13 +476,14 @@ export default function App() {
       updatedAt: Date.now(),
       imageUrl
     };
-    db.tickets.add(newTicket);
-    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'CREATE_TICKET', targetRef: newTicket.id, createdAt: Date.now() });
+    await database.tickets.add(newTicket);
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'CREATE_TICKET', targetRef: newTicket.id, createdAt: Date.now() });
     
     // Notify Admins
-    db.users.getAll().filter(u => u.role === 'admin').forEach(admin => {
-      db.notifications.add({
-        id: `n-${Date.now()}`,
+    const allUsers = await database.users.getAll();
+    allUsers.filter(u => u.role === 'admin').forEach(async (admin) => {
+      await database.notifications.add({
+        id: `n-${Date.now()}-${admin.uid}`,
         userId: admin.uid,
         title: "Novo Ticket Criado",
         message: `Um novo ticket "${title}" foi criado e aguarda atribuição.`,
@@ -226,17 +495,17 @@ export default function App() {
     });
 
     setIsCategorizing(false);
-    refreshData();
   };
 
-  const disputeTicket = (ticketId: string, reason: string) => {
-    db.tickets.update(ticketId, { status: 'disputed', disputeReason: reason });
-    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'DISPUTE_TICKET', targetRef: ticketId, details: reason, createdAt: Date.now() });
+  const disputeTicket = async (ticketId: string, reason: string) => {
+    await database.tickets.update(ticketId, { status: 'disputed', disputeReason: reason });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'DISPUTE_TICKET', targetRef: ticketId, details: reason, createdAt: Date.now() });
     
     // Notify Admin
-    db.users.getAll().filter(u => u.role === 'admin').forEach(admin => {
-      db.notifications.add({
-        id: `n-${Date.now()}`,
+    const allUsers = await database.users.getAll();
+    allUsers.filter(u => u.role === 'admin').forEach(async (admin) => {
+      await database.notifications.add({
+        id: `n-${Date.now()}-${admin.uid}`,
         userId: admin.uid,
         title: "Ticket em Disputa",
         message: `O ticket ${ticketId} foi colocado em disputa pelo cliente.`,
@@ -246,39 +515,42 @@ export default function App() {
         link: ticketId
       });
     });
-    refreshData();
   };
 
-  const rateTechnician = (ticketId: string, score: number, comment: string) => {
-    const ticket = db.tickets.getById(ticketId);
+  const rateTechnician = async (ticketId: string, score: number, comment: string) => {
+    const ticket = await database.tickets.getById(ticketId);
     if (!ticket || !ticket.techId) return;
 
-    db.tickets.update(ticketId, { 
+    await database.tickets.update(ticketId, { 
       status: 'completed',
       rating: { score, comment, createdAt: Date.now() }
     });
 
     // Update Tech Rating
-    const tech = db.users.getById(ticket.techId);
+    const tech = await database.users.getById(ticket.techId);
     if (tech) {
       const totalRatings = (tech.totalRatings || 0) + 1;
       const currentRating = tech.rating || 0;
       const newRating = ((currentRating * (tech.totalRatings || 0)) + score) / totalRatings;
-      db.users.update(tech.uid, { rating: newRating, totalRatings });
+      await database.users.update(tech.uid, { rating: newRating, totalRatings });
     }
 
-    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'RATE_TECH', targetRef: ticket.techId, details: `Score: ${score}`, createdAt: Date.now() });
-    refreshData();
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'RATE_TECH', targetRef: ticket.techId, details: `Score: ${score}`, createdAt: Date.now() });
   };
 
-  const assignTech = (ticketId: string, techId: string) => {
-    db.tickets.update(ticketId, { techId, status: 'assigned' });
-    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'ASSIGN_TECH', targetRef: ticketId, details: `Tech: ${techId}`, createdAt: Date.now() });
-    refreshData();
+  const assignTech = async (ticketId: string, techId: string) => {
+    await database.tickets.update(ticketId, { techId, status: 'assigned' });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'ASSIGN_TECH', targetRef: ticketId, details: `Tech: ${techId}`, createdAt: Date.now() });
   };
 
-  const setBudget = (ticketId: string, amount: number) => {
-    const ticket = db.tickets.getById(ticketId);
+  const acceptTicket = async (ticketId: string) => {
+    if (!currentUser || currentUser.role !== 'tech') return;
+    await database.tickets.update(ticketId, { techId: currentUser.uid, status: 'assigned' });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'ACCEPT_TICKET', targetRef: ticketId, createdAt: Date.now() });
+  };
+
+  const setBudget = async (ticketId: string, amount: number) => {
+    const ticket = await database.tickets.getById(ticketId);
     if (!ticket || !ticket.techId) return;
 
     const fee = amount * (ticket.platformFeePct / 100);
@@ -298,9 +570,8 @@ export default function App() {
       updatedAt: Date.now()
     };
 
-    db.payments.add(newPayment);
-    db.tickets.update(ticketId, { budgetAmount: amount, budgetType: 'fixed', status: 'awaiting_payment' });
-    refreshData();
+    await database.payments.add(newPayment);
+    await database.tickets.update(ticketId, { budgetAmount: amount, budgetType: 'fixed', status: 'awaiting_payment' });
   };
 
   const submitPaymentProof = async (paymentId: string, proofText: string, imageFile?: File) => {
@@ -308,22 +579,19 @@ export default function App() {
     if (imageFile) {
       proofImageUrl = await fileToBase64(imageFile);
     }
-    db.payments.update(paymentId, { proofText, proofImageUrl, status: 'proof_submitted' });
-    refreshData();
+    await database.payments.update(paymentId, { proofText, proofImageUrl, status: 'proof_submitted' });
   };
 
-  const confirmPayment = (paymentId: string) => {
-    const payment = db.payments.getById(paymentId);
+  const confirmPayment = async (paymentId: string) => {
+    const payment = await database.payments.getById(paymentId);
     if (!payment) return;
-    db.payments.update(paymentId, { status: 'confirmed', confirmedBy: currentUser?.uid, confirmedAt: Date.now() });
-    db.tickets.update(payment.ticketId, { status: 'paid' });
-    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'CONFIRM_PAYMENT', targetRef: paymentId, createdAt: Date.now() });
-    refreshData();
+    await database.payments.update(paymentId, { status: 'confirmed', confirmedBy: currentUser?.uid, confirmedAt: Date.now() });
+    await database.tickets.update(payment.ticketId, { status: 'paid' });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'CONFIRM_PAYMENT', targetRef: paymentId, createdAt: Date.now() });
   };
 
-  const rejectPayment = (paymentId: string) => {
-    db.payments.update(paymentId, { status: 'rejected' });
-    refreshData();
+  const rejectPayment = async (paymentId: string) => {
+    await database.payments.update(paymentId, { status: 'rejected' });
   };
 
   const sendMessage = async (ticketId: string, text: string) => {
@@ -343,8 +611,7 @@ export default function App() {
       text,
       createdAt: Date.now()
     };
-    db.chats.addMessage(ticketId, newMessage);
-    refreshData();
+    await database.chats.addMessage(ticketId, newMessage);
   };
 
   // --- Views ---
@@ -356,8 +623,15 @@ export default function App() {
       const pendingPayments = payments.filter(p => p.status === 'proof_submitted');
       const disputedTickets = tickets.filter(t => t.status === 'disputed');
       const allTickets = tickets;
-      const allUsers = db.users.getAll();
-      const financials = db.getFinancials();
+      
+      // Calculate financials from state
+      const confirmedPayments = payments.filter(p => p.status === 'confirmed');
+      const financials = {
+        totalVolume: confirmedPayments.reduce((acc, p) => acc + p.amountTotal, 0),
+        platformRevenue: confirmedPayments.reduce((acc, p) => acc + p.platformFee, 0),
+        techPayouts: confirmedPayments.reduce((acc, p) => acc + p.techReceives, 0),
+        count: confirmedPayments.length
+      };
 
       return (
         <div className="space-y-8">
@@ -447,16 +721,15 @@ export default function App() {
                   <p className="text-sm text-slate-600 mb-4 line-clamp-2">{t.description}</p>
                   <div className="flex gap-2 items-center">
                     {!t.techId && (
-                      <select 
-                        onChange={(e) => assignTech(t.id, e.target.value)}
-                        className="p-1 text-sm border rounded"
-                        defaultValue=""
-                      >
-                        <option value="" disabled>Atribuir Técnico...</option>
-                        {allUsers.filter(u => u.role === 'tech').map(u => (
-                          <option key={u.uid} value={u.uid}>{u.email}</option>
-                        ))}
-                      </select>
+                      <Button variant="outline" className="text-sm" onClick={async () => {
+                        const techEmail = prompt("Digite o email do técnico para atribuir:");
+                        if (techEmail) {
+                          const allUsers = await database.users.getAll();
+                          const tech = allUsers.find(u => u.email === techEmail && u.role === 'tech');
+                          if (tech) assignTech(t.id, tech.uid);
+                          else alert("Técnico não encontrado.");
+                        }
+                      }}>Atribuir Técnico</Button>
                     )}
                     <Button variant="outline" className="text-sm" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>Ver Detalhes</Button>
                   </div>
@@ -540,14 +813,18 @@ export default function App() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold mb-4 text-slate-400">Tickets em Aberto (Aguardando Admin)</h2>
-            <div className="grid md:grid-cols-2 gap-4 opacity-75">
+            <h2 className="text-2xl font-bold mb-4 text-slate-800">Tickets em Aberto</h2>
+            <div className="grid md:grid-cols-2 gap-4">
               {availableTickets.map(t => (
-                <Card key={t.id}>
-                  <h3 className="font-bold">{t.title}</h3>
-                  <p className="text-xs text-slate-400 italic">Somente o Admin pode atribuir você a este ticket.</p>
+                <Card key={t.id} className="flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-bold text-lg">{t.title}</h3>
+                    <p className="text-sm text-slate-600 mb-4 line-clamp-2">{t.description}</p>
+                  </div>
+                  <Button variant="primary" className="w-full" onClick={() => acceptTicket(t.id)}>Aceitar Ticket</Button>
                 </Card>
               ))}
+              {availableTickets.length === 0 && <p className="text-slate-500 italic">Nenhum ticket em aberto no momento.</p>}
             </div>
           </section>
         </div>
@@ -557,187 +834,26 @@ export default function App() {
 
   const renderTicketDetail = () => {
     if (!selectedTicketId || !currentUser) return null;
-    const ticket = db.tickets.getById(selectedTicketId);
+    const ticket = tickets.find(t => t.id === selectedTicketId);
     if (!ticket) return <p>Ticket não encontrado.</p>;
 
-    const messages = db.chats.getMessages(ticket.id);
-    const payment = db.payments.getByTicket(ticket.id);
-    const client = db.users.getById(ticket.clientId);
-
-    return (
-      <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <div className="flex justify-between items-center mb-4">
-              <Button variant="outline" onClick={() => setView('dashboard')}>← Voltar</Button>
-              <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
-            </div>
-            <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
-            <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap mb-4">{ticket.description}</p>
-            {ticket.imageUrl && (
-              <div className="mt-4">
-                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Anexo do Problema:</p>
-                <img src={ticket.imageUrl} alt="Problema" className="max-w-full h-auto rounded-lg border shadow-sm max-h-64 object-contain" />
-              </div>
-            )}
-          </Card>
-
-          {/* Chat System */}
-          <Card className="flex flex-col h-[500px]">
-            <h3 className="font-bold text-lg mb-4">Chat Interno (Seguro)</h3>
-            <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-              {messages.map(m => (
-                <div key={m.id} className={`flex ${m.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[80%] p-3 rounded-lg ${m.senderId === currentUser.uid ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
-                    <p className="text-xs opacity-75 mb-1 font-bold">{m.senderRole.toUpperCase()}</p>
-                    <p className="text-sm">{m.text}</p>
-                    <p className="text-[10px] text-right mt-1 opacity-50">{new Date(m.createdAt).toLocaleTimeString()}</p>
-                  </div>
-                </div>
-              ))}
-              {messages.length === 0 && <p className="text-center text-slate-400 italic mt-10">Inicie a conversa para alinhar o atendimento.</p>}
-            </div>
-            <form onSubmit={(e: any) => {
-              e.preventDefault();
-              sendMessage(ticket.id, e.target.msg.value);
-              e.target.reset();
-            }} className="flex gap-2 border-t pt-4">
-              <input name="msg" placeholder="Digite sua mensagem..." className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
-              <Button type="submit">Enviar</Button>
-            </form>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          {(currentUser.role === 'admin' || currentUser.role === 'tech') && client && (
-            <Card className="border-blue-100 bg-blue-50/30">
-              <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
-                👤 Informações do Cliente
-              </h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Email:</span>
-                  <span className="font-medium">{client.email}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Membro desde:</span>
-                  <span className="font-medium">{new Date(client.createdAt).toLocaleDateString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">ID do Usuário:</span>
-                  <span className="font-mono text-[10px]">{client.uid}</span>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          <Card>
-            <h3 className="font-bold text-lg mb-4">Informações de Pagamento</h3>
-            {!payment && currentUser.role === 'tech' && (
-              <div className="space-y-4">
-                <p className="text-sm text-slate-500 italic">Defina o orçamento para o cliente realizar o pagamento via PIX.</p>
-                <input type="number" id="budgetInput" placeholder="Valor Total (R$)" className="w-full p-2 border rounded" />
-                <Button className="w-full" onClick={() => {
-                  const val = parseFloat((document.getElementById('budgetInput') as HTMLInputElement).value);
-                  if (val > 0) setBudget(ticket.id, val);
-                }}>Enviar Orçamento</Button>
-              </div>
-            )}
-
-            {!payment && currentUser.role === 'client' && (
-              <p className="text-slate-500 italic">Aguardando orçamento do técnico.</p>
-            )}
-
-            {payment && (
-              <div className="space-y-4">
-                <div className="flex justify-between text-sm">
-                  <span>Valor Total:</span>
-                  <span className="font-bold">R$ {payment.amountTotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-500">
-                  <span>Status:</span>
-                  <Badge status={payment.status}>{PAYMENT_STATUS_LABELS[payment.status]}</Badge>
-                </div>
-
-                {currentUser.role === 'client' && payment.status === 'pending' && (
-                  <div className="pt-4 border-t">
-                    <p className="text-xs font-bold text-blue-700 mb-2 uppercase">Instruções:</p>
-                    <p className="text-sm mb-4">Envie o PIX para a chave do Admin (PIX: financeiro@remototech.com) e anexe o comprovante abaixo.</p>
-                    <textarea id="proofInput" placeholder="Cole o texto do comprovante aqui..." className="w-full p-2 border rounded h-20 text-sm mb-2" />
-                    <div className="mb-4">
-                      <label className="text-xs font-bold opacity-80 block mb-1">Anexar Print do Comprovante:</label>
-                      <input type="file" id="proofImageInput" accept="image/*" className="text-xs" />
-                    </div>
-                    <Button className="w-full" onClick={async () => {
-                      const proof = (document.getElementById('proofInput') as HTMLTextAreaElement).value;
-                      const imageFile = (document.getElementById('proofImageInput') as HTMLInputElement).files?.[0];
-                      if (proof || imageFile) await submitPaymentProof(payment.id, proof, imageFile);
-                    }}>Enviar Comprovante</Button>
-                  </div>
-                )}
-
-                {currentUser.role === 'client' && payment.status === 'proof_submitted' && (
-                  <p className="bg-amber-50 text-amber-800 p-3 rounded text-sm italic">Comprovante enviado! Aguarde o Admin confirmar para liberar o técnico.</p>
-                )}
-
-                {currentUser.role === 'tech' && payment.status === 'confirmed' && (
-                  <div className="bg-green-100 text-green-800 p-3 rounded">
-                    <p className="text-sm font-bold">Pagamento Confirmado!</p>
-                    <p className="text-xs">Você receberá R$ {payment.techReceives.toFixed(2)} após a conclusão.</p>
-                    <Button className="w-full mt-2" onClick={() => db.tickets.update(ticket.id, { status: 'in_progress' })}>Iniciar Execução</Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-
-          <Card className="bg-slate-900 text-white">
-            <h3 className="font-bold mb-2">🛡️ Regras de Segurança</h3>
-            <ul className="text-xs space-y-2 opacity-80">
-              <li>• Jamais compartilhe WhatsApp ou redes sociais no chat.</li>
-              <li>• O pagamento deve ser feito exclusivamente via plataforma.</li>
-              <li>• O descumprimento gera suspensão imediata da conta.</li>
-            </ul>
-          </Card>
-
-          {ticket.status === 'in_progress' && currentUser.role === 'client' && (
-            <Card className="border-red-200">
-              <h3 className="font-bold text-red-600 mb-2">Problemas com o serviço?</h3>
-              <p className="text-xs text-slate-500 mb-4">Se o técnico não estiver cumprindo o combinado, você pode abrir uma disputa.</p>
-              <Button variant="danger" className="w-full text-sm" onClick={() => {
-                const reason = prompt("Descreva o motivo da disputa:");
-                if (reason) disputeTicket(ticket.id, reason);
-              }}>Abrir Disputa</Button>
-            </Card>
-          )}
-
-          {ticket.status === 'in_progress' && currentUser.role === 'tech' && (
-            <Button className="w-full" onClick={() => db.tickets.update(ticket.id, { status: 'completed' })}>Finalizar Atendimento</Button>
-          )}
-
-          {ticket.status === 'completed' && currentUser.role === 'client' && !ticket.rating && (
-            <Card className="bg-amber-50 border-amber-200">
-              <h3 className="font-bold text-amber-800 mb-2">Avalie o Técnico</h3>
-              <p className="text-xs text-amber-700 mb-4">Sua avaliação ajuda a manter a qualidade da plataforma.</p>
-              <div className="space-y-4">
-                <StarRating rating={0} onRate={(r) => {
-                  const comment = prompt("Deixe um comentário (opcional):");
-                  rateTechnician(ticket.id, r, comment || '');
-                }} />
-              </div>
-            </Card>
-          )}
-
-          {ticket.rating && (
-            <Card className="bg-slate-50">
-              <h3 className="font-bold mb-2">Avaliação do Cliente</h3>
-              <StarRating rating={ticket.rating.score} readonly />
-              {ticket.rating.comment && <p className="text-sm italic mt-2 text-slate-600">"{ticket.rating.comment}"</p>}
-            </Card>
-          )}
-        </div>
-      </div>
-    );
+    // For simplicity in this real-time version, we'll use a local state for messages in this view
+    // or just rely on the fact that we'll add a listener here.
+    return <TicketDetailView 
+      ticket={ticket} 
+      currentUser={currentUser} 
+      onBack={() => setView('dashboard')}
+      onSendMessage={sendMessage}
+      onSetBudget={setBudget}
+      onSubmitProof={submitPaymentProof}
+      onConfirmPayment={confirmPayment}
+      onRejectPayment={rejectPayment}
+      onStartExecution={(tid) => database.tickets.update(tid, { status: 'in_progress' })}
+      onDispute={disputeTicket}
+      onFinish={(tid) => database.tickets.update(tid, { status: 'completed' })}
+      onRate={rateTechnician}
+      payment={payments.find(p => p.ticketId === ticket.id)}
+    />;
   };
 
   const renderAdminLogs = () => (
@@ -759,7 +875,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody>
-              {db.logs.getAll().map(log => (
+              {logs.map(log => (
                 <tr key={log.id} className="border-b hover:bg-slate-50">
                   <td className="py-2 opacity-50">{new Date(log.createdAt).toLocaleString()}</td>
                   <td className="font-medium">{log.actorId}</td>
@@ -776,6 +892,12 @@ export default function App() {
   );
 
   // --- Main Layout ---
+
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
+    </div>
+  );
 
   if (view === 'landing') return <LandingPage onStart={() => setView('auth')} />;
   if (view === 'auth' || !currentUser) return <AuthPage onLogin={(u) => { setCurrentUser(u); setView('dashboard'); }} />;
@@ -806,14 +928,14 @@ export default function App() {
           <div className="absolute right-4 top-16 w-80 bg-white border rounded-xl shadow-xl z-[60] max-h-[400px] overflow-y-auto">
             <div className="p-4 border-b flex justify-between items-center">
               <h3 className="font-bold">Notificações</h3>
-              <button className="text-xs text-blue-600" onClick={() => notifications.forEach(n => db.notifications.markAsRead(n.id))}>Marcar todas como lidas</button>
+              <button className="text-xs text-blue-600" onClick={() => notifications.forEach(n => database.notifications.markAsRead(n.id))}>Marcar todas como lidas</button>
             </div>
             {notifications.map(n => (
               <div 
                 key={n.id} 
                 className={`p-4 border-b last:border-none cursor-pointer hover:bg-slate-50 ${!n.read ? 'bg-blue-50/50' : ''}`}
                 onClick={() => {
-                  db.notifications.markAsRead(n.id);
+                  database.notifications.markAsRead(n.id);
                   if (n.link) {
                     setSelectedTicketId(n.link);
                     setView('ticket');
@@ -841,10 +963,14 @@ export default function App() {
         <p>© 2024 RemotoTech - Intermediação de Assistência Técnica Online.</p>
         <p className="mt-1">Segurança • Transparência • Eficiência</p>
         <button 
-          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          onClick={async () => { 
+            await signOut(auth);
+            localStorage.clear(); 
+            window.location.reload(); 
+          }}
           className="mt-4 text-[10px] uppercase tracking-widest hover:text-red-500 transition-colors"
         >
-          [ Resetar Dados da Simulação ]
+          [ Resetar Dados e Sair ]
         </button>
       </footer>
     </div>
