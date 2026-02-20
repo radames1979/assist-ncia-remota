@@ -840,6 +840,12 @@ export default function App() {
       <footer className="bg-slate-100 border-t py-6 mt-12 text-center text-slate-400 text-sm">
         <p>© 2024 RemotoTech - Intermediação de Assistência Técnica Online.</p>
         <p className="mt-1">Segurança • Transparência • Eficiência</p>
+        <button 
+          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          className="mt-4 text-[10px] uppercase tracking-widest hover:text-red-500 transition-colors"
+        >
+          [ Resetar Dados da Simulação ]
+        </button>
       </footer>
     </div>
   );

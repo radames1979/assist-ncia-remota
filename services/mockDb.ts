@@ -132,7 +132,10 @@ export const db = {
 };
 
 // Seeder: Create Admin if empty
-if (db.users.getAll().length === 0) {
+const existingUsers = db.users.getAll();
+const adminExists = existingUsers.some(u => u.email === 'admin@remototech.com');
+
+if (!adminExists) {
   db.users.add({
     uid: 'admin-01',
     email: 'admin@remototech.com',
