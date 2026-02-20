@@ -1,12 +1,13 @@
 
-import { User, Ticket, Payment, Message, AuditLog, UserRole } from '../types';
+import { User, Ticket, Payment, Message, AuditLog, UserRole, AppNotification } from '../types';
 
 const STORAGE_KEYS = {
   USERS: 'rt_users',
   TICKETS: 'rt_tickets',
   PAYMENTS: 'rt_payments',
   CHATS: 'rt_chats',
-  LOGS: 'rt_logs'
+  LOGS: 'rt_logs',
+  NOTIFICATIONS: 'rt_notifications'
 };
 
 const get = <T,>(key: string): T[] => {
@@ -26,6 +27,14 @@ export const db = {
       const users = get<User>(STORAGE_KEYS.USERS);
       users.push(user);
       save(STORAGE_KEYS.USERS, users);
+    },
+    update: (uid: string, updates: Partial<User>) => {
+      const users = get<User>(STORAGE_KEYS.USERS);
+      const index = users.findIndex(u => u.uid === uid);
+      if (index !== -1) {
+        users[index] = { ...users[index], ...updates };
+        save(STORAGE_KEYS.USERS, users);
+      }
     }
   },
   tickets: {
@@ -90,6 +99,35 @@ export const db = {
       save(STORAGE_KEYS.LOGS, logs);
     },
     getAll: () => get<AuditLog>(STORAGE_KEYS.LOGS).sort((a, b) => b.createdAt - a.createdAt)
+  },
+  notifications: {
+    getAll: (userId: string) => get<AppNotification>(STORAGE_KEYS.NOTIFICATIONS).filter(n => n.userId === userId).sort((a, b) => b.createdAt - a.createdAt),
+    add: (notification: AppNotification) => {
+      const notifications = get<AppNotification>(STORAGE_KEYS.NOTIFICATIONS);
+      notifications.push(notification);
+      save(STORAGE_KEYS.NOTIFICATIONS, notifications);
+    },
+    markAsRead: (id: string) => {
+      const notifications = get<AppNotification>(STORAGE_KEYS.NOTIFICATIONS);
+      const index = notifications.findIndex(n => n.id === id);
+      if (index !== -1) {
+        notifications[index].read = true;
+        save(STORAGE_KEYS.NOTIFICATIONS, notifications);
+      }
+    }
+  },
+  getFinancials: () => {
+    const payments = get<Payment>(STORAGE_KEYS.PAYMENTS).filter(p => p.status === 'confirmed');
+    const totalVolume = payments.reduce((acc, p) => acc + p.amountTotal, 0);
+    const platformRevenue = payments.reduce((acc, p) => acc + p.platformFee, 0);
+    const techPayouts = payments.reduce((acc, p) => acc + p.techReceives, 0);
+    
+    return {
+      totalVolume,
+      platformRevenue,
+      techPayouts,
+      count: payments.length
+    };
   }
 };
 

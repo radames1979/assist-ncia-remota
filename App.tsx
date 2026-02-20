@@ -1,11 +1,37 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Ticket, Payment, Message, UserRole, TicketStatus, PaymentStatus } from './types';
+import { User, Ticket, Payment, Message, UserRole, TicketStatus, PaymentStatus, AppNotification } from './types';
 import { db } from './services/mockDb';
 import { PLATFORM_FEE_PCT, TICKET_STATUS_LABELS, CATEGORIES, PAYMENT_STATUS_LABELS } from './constants';
-import { analyzeMessageSafety, summarizeAuditLog } from './services/gemini';
+import { analyzeMessageSafety, summarizeAuditLog, suggestCategory } from './services/gemini';
 
 // --- UI Components ---
+
+const NotificationBell = ({ count, onClick }: { count: number, onClick: () => void }) => (
+  <button onClick={onClick} className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+    {count > 0 && (
+      <span className="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white">
+        {count}
+      </span>
+    )}
+  </button>
+);
+
+const StarRating = ({ rating, onRate, readonly = false }: { rating: number, onRate?: (r: number) => void, readonly?: boolean }) => (
+  <div className="flex gap-1">
+    {[1, 2, 3, 4, 5].map(star => (
+      <button
+        key={star}
+        disabled={readonly}
+        onClick={() => onRate?.(star)}
+        className={`${star <= rating ? 'text-amber-400 fill-amber-400' : 'text-slate-300'} transition-colors`}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      </button>
+    ))}
+  </div>
+);
 
 const Button = ({ children, onClick, variant = 'primary', className = '', disabled = false, type = 'button' }: any) => {
   const base = "px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
@@ -128,12 +154,25 @@ export default function App() {
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [isCategorizing, setIsCategorizing] = useState(false);
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
 
   // Navigation and Refresh
   const refreshData = () => {
     if (!currentUser) return;
     setTickets(db.tickets.getAll());
     setPayments(db.payments.getAll());
+    setNotifications(db.notifications.getAll(currentUser.uid));
   };
 
   useEffect(() => {
@@ -145,8 +184,18 @@ export default function App() {
     setView('landing');
   };
 
-  const createTicket = (title: string, category: string, description: string) => {
+  const createTicket = async (title: string, description: string, manualCategory: string, imageFile?: File) => {
     if (!currentUser) return;
+    setIsCategorizing(true);
+    
+    let imageUrl = '';
+    if (imageFile) {
+      imageUrl = await fileToBase64(imageFile);
+    }
+
+    // Gemini Auto-categorization
+    const category = manualCategory === "Outros" ? await suggestCategory(description) : manualCategory;
+    
     const newTicket: Ticket = {
       id: `t-${Date.now()}`,
       clientId: currentUser.uid,
@@ -156,10 +205,69 @@ export default function App() {
       description,
       platformFeePct: PLATFORM_FEE_PCT,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      imageUrl
     };
     db.tickets.add(newTicket);
     db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'CREATE_TICKET', targetRef: newTicket.id, createdAt: Date.now() });
+    
+    // Notify Admins
+    db.users.getAll().filter(u => u.role === 'admin').forEach(admin => {
+      db.notifications.add({
+        id: `n-${Date.now()}`,
+        userId: admin.uid,
+        title: "Novo Ticket Criado",
+        message: `Um novo ticket "${title}" foi criado e aguarda atribuição.`,
+        type: 'info',
+        read: false,
+        createdAt: Date.now(),
+        link: newTicket.id
+      });
+    });
+
+    setIsCategorizing(false);
+    refreshData();
+  };
+
+  const disputeTicket = (ticketId: string, reason: string) => {
+    db.tickets.update(ticketId, { status: 'disputed', disputeReason: reason });
+    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'DISPUTE_TICKET', targetRef: ticketId, details: reason, createdAt: Date.now() });
+    
+    // Notify Admin
+    db.users.getAll().filter(u => u.role === 'admin').forEach(admin => {
+      db.notifications.add({
+        id: `n-${Date.now()}`,
+        userId: admin.uid,
+        title: "Ticket em Disputa",
+        message: `O ticket ${ticketId} foi colocado em disputa pelo cliente.`,
+        type: 'warning',
+        read: false,
+        createdAt: Date.now(),
+        link: ticketId
+      });
+    });
+    refreshData();
+  };
+
+  const rateTechnician = (ticketId: string, score: number, comment: string) => {
+    const ticket = db.tickets.getById(ticketId);
+    if (!ticket || !ticket.techId) return;
+
+    db.tickets.update(ticketId, { 
+      status: 'completed',
+      rating: { score, comment, createdAt: Date.now() }
+    });
+
+    // Update Tech Rating
+    const tech = db.users.getById(ticket.techId);
+    if (tech) {
+      const totalRatings = (tech.totalRatings || 0) + 1;
+      const currentRating = tech.rating || 0;
+      const newRating = ((currentRating * (tech.totalRatings || 0)) + score) / totalRatings;
+      db.users.update(tech.uid, { rating: newRating, totalRatings });
+    }
+
+    db.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'RATE_TECH', targetRef: ticket.techId, details: `Score: ${score}`, createdAt: Date.now() });
     refreshData();
   };
 
@@ -195,8 +303,12 @@ export default function App() {
     refreshData();
   };
 
-  const submitPaymentProof = (paymentId: string, proofText: string) => {
-    db.payments.update(paymentId, { proofText, status: 'proof_submitted' });
+  const submitPaymentProof = async (paymentId: string, proofText: string, imageFile?: File) => {
+    let proofImageUrl = '';
+    if (imageFile) {
+      proofImageUrl = await fileToBase64(imageFile);
+    }
+    db.payments.update(paymentId, { proofText, proofImageUrl, status: 'proof_submitted' });
     refreshData();
   };
 
@@ -242,11 +354,32 @@ export default function App() {
 
     if (currentUser.role === 'admin') {
       const pendingPayments = payments.filter(p => p.status === 'proof_submitted');
+      const disputedTickets = tickets.filter(t => t.status === 'disputed');
       const allTickets = tickets;
       const allUsers = db.users.getAll();
+      const financials = db.getFinancials();
 
       return (
         <div className="space-y-8">
+          <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card className="bg-slate-900 text-white">
+              <p className="text-xs opacity-60 uppercase font-bold mb-1">Volume Total</p>
+              <p className="text-2xl font-bold">R$ {financials.totalVolume.toFixed(2)}</p>
+            </Card>
+            <Card className="bg-blue-600 text-white">
+              <p className="text-xs opacity-60 uppercase font-bold mb-1">Receita Plataforma</p>
+              <p className="text-2xl font-bold">R$ {financials.platformRevenue.toFixed(2)}</p>
+            </Card>
+            <Card className="bg-emerald-600 text-white">
+              <p className="text-xs opacity-60 uppercase font-bold mb-1">Pagos a Técnicos</p>
+              <p className="text-2xl font-bold">R$ {financials.techPayouts.toFixed(2)}</p>
+            </Card>
+            <Card className="bg-slate-100">
+              <p className="text-xs text-slate-500 uppercase font-bold mb-1">Transações</p>
+              <p className="text-2xl font-bold text-slate-800">{financials.count}</p>
+            </Card>
+          </section>
+
           <section>
             <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
               💳 Pagamentos Pendentes
@@ -259,8 +392,16 @@ export default function App() {
                     <p className="font-bold">Total: R$ {p.amountTotal.toFixed(2)}</p>
                     <p className="text-sm text-slate-500">Ticket: {p.ticketId}</p>
                     <div className="mt-2 p-2 bg-slate-100 rounded text-xs italic">
-                      Comprovante (Texto): {p.proofText}
+                      Comprovante (Texto): {p.proofText || 'Nenhum texto enviado'}
                     </div>
+                    {p.proofImageUrl && (
+                      <button 
+                        className="mt-2 text-blue-600 text-xs font-bold hover:underline"
+                        onClick={() => window.open(p.proofImageUrl, '_blank')}
+                      >
+                        Ver Imagem do Comprovante
+                      </button>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="primary" onClick={() => confirmPayment(p.id)}>Confirmar</Button>
@@ -271,6 +412,28 @@ export default function App() {
               {pendingPayments.length === 0 && <p className="text-slate-500 italic">Nenhum pagamento aguardando confirmação.</p>}
             </div>
           </section>
+
+          {disputedTickets.length > 0 && (
+            <section>
+              <h2 className="text-2xl font-bold mb-4 text-red-600 flex items-center gap-2">
+                ⚠️ Tickets em Disputa
+                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{disputedTickets.length}</span>
+              </h2>
+              <div className="grid gap-4">
+                {disputedTickets.map(t => (
+                  <Card key={t.id} className="border-red-200 bg-red-50">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-bold">{t.title}</h3>
+                        <p className="text-sm text-red-700 mt-1">Motivo: {t.disputeReason}</p>
+                      </div>
+                      <Button variant="outline" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>Intervir</Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <h2 className="text-2xl font-bold mb-4">🎫 Todos os Tickets</h2>
@@ -311,19 +474,27 @@ export default function App() {
         <div className="space-y-8">
           <Card className="bg-blue-600 text-white border-none">
             <h2 className="text-xl font-bold mb-4">Precisa de assistência técnica?</h2>
-            <form onSubmit={(e: any) => {
+            <form onSubmit={async (e: any) => {
               e.preventDefault();
-              createTicket(e.target.title.value, e.target.category.value, e.target.description.value);
+              const imageFile = e.target.image.files[0];
+              await createTicket(e.target.title.value, e.target.description.value, e.target.category.value, imageFile);
               e.target.reset();
             }} className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <input name="title" placeholder="Resumo do problema" className="p-2 rounded text-slate-900 w-full" required />
                 <select name="category" className="p-2 rounded text-slate-900 w-full" required>
+                  <option value="Outros">Auto-Categorizar (IA)</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <textarea name="description" placeholder="Descreva o que está acontecendo..." className="p-2 rounded text-slate-900 w-full h-24" required />
-              <Button type="submit" variant="secondary" className="w-full md:w-auto">Criar Chamado</Button>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold opacity-80">Anexar Foto do Problema (Opcional):</label>
+                <input type="file" name="image" accept="image/*" className="text-xs" />
+              </div>
+              <Button type="submit" variant="secondary" className="w-full md:w-auto" disabled={isCategorizing}>
+                {isCategorizing ? 'Analisando...' : 'Criar Chamado'}
+              </Button>
             </form>
           </Card>
 
@@ -391,6 +562,7 @@ export default function App() {
 
     const messages = db.chats.getMessages(ticket.id);
     const payment = db.payments.getByTicket(ticket.id);
+    const client = db.users.getById(ticket.clientId);
 
     return (
       <div className="grid lg:grid-cols-3 gap-6">
@@ -401,7 +573,13 @@ export default function App() {
               <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
             </div>
             <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
-            <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap">{ticket.description}</p>
+            <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap mb-4">{ticket.description}</p>
+            {ticket.imageUrl && (
+              <div className="mt-4">
+                <p className="text-xs font-bold text-slate-400 uppercase mb-2">Anexo do Problema:</p>
+                <img src={ticket.imageUrl} alt="Problema" className="max-w-full h-auto rounded-lg border shadow-sm max-h-64 object-contain" />
+              </div>
+            )}
           </Card>
 
           {/* Chat System */}
@@ -431,6 +609,28 @@ export default function App() {
         </div>
 
         <div className="space-y-6">
+          {(currentUser.role === 'admin' || currentUser.role === 'tech') && client && (
+            <Card className="border-blue-100 bg-blue-50/30">
+              <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+                👤 Informações do Cliente
+              </h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Email:</span>
+                  <span className="font-medium">{client.email}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Membro desde:</span>
+                  <span className="font-medium">{new Date(client.createdAt).toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">ID do Usuário:</span>
+                  <span className="font-mono text-[10px]">{client.uid}</span>
+                </div>
+              </div>
+            </Card>
+          )}
+
           <Card>
             <h3 className="font-bold text-lg mb-4">Informações de Pagamento</h3>
             {!payment && currentUser.role === 'tech' && (
@@ -462,11 +662,16 @@ export default function App() {
                 {currentUser.role === 'client' && payment.status === 'pending' && (
                   <div className="pt-4 border-t">
                     <p className="text-xs font-bold text-blue-700 mb-2 uppercase">Instruções:</p>
-                    <p className="text-sm mb-4">Envie o PIX para a chave do Admin (PIX: financeiro@remototech.com) e cole o texto/ID do comprovante abaixo.</p>
+                    <p className="text-sm mb-4">Envie o PIX para a chave do Admin (PIX: financeiro@remototech.com) e anexe o comprovante abaixo.</p>
                     <textarea id="proofInput" placeholder="Cole o texto do comprovante aqui..." className="w-full p-2 border rounded h-20 text-sm mb-2" />
-                    <Button className="w-full" onClick={() => {
+                    <div className="mb-4">
+                      <label className="text-xs font-bold opacity-80 block mb-1">Anexar Print do Comprovante:</label>
+                      <input type="file" id="proofImageInput" accept="image/*" className="text-xs" />
+                    </div>
+                    <Button className="w-full" onClick={async () => {
                       const proof = (document.getElementById('proofInput') as HTMLTextAreaElement).value;
-                      if (proof) submitPaymentProof(payment.id, proof);
+                      const imageFile = (document.getElementById('proofImageInput') as HTMLInputElement).files?.[0];
+                      if (proof || imageFile) await submitPaymentProof(payment.id, proof, imageFile);
                     }}>Enviar Comprovante</Button>
                   </div>
                 )}
@@ -494,6 +699,42 @@ export default function App() {
               <li>• O descumprimento gera suspensão imediata da conta.</li>
             </ul>
           </Card>
+
+          {ticket.status === 'in_progress' && currentUser.role === 'client' && (
+            <Card className="border-red-200">
+              <h3 className="font-bold text-red-600 mb-2">Problemas com o serviço?</h3>
+              <p className="text-xs text-slate-500 mb-4">Se o técnico não estiver cumprindo o combinado, você pode abrir uma disputa.</p>
+              <Button variant="danger" className="w-full text-sm" onClick={() => {
+                const reason = prompt("Descreva o motivo da disputa:");
+                if (reason) disputeTicket(ticket.id, reason);
+              }}>Abrir Disputa</Button>
+            </Card>
+          )}
+
+          {ticket.status === 'in_progress' && currentUser.role === 'tech' && (
+            <Button className="w-full" onClick={() => db.tickets.update(ticket.id, { status: 'completed' })}>Finalizar Atendimento</Button>
+          )}
+
+          {ticket.status === 'completed' && currentUser.role === 'client' && !ticket.rating && (
+            <Card className="bg-amber-50 border-amber-200">
+              <h3 className="font-bold text-amber-800 mb-2">Avalie o Técnico</h3>
+              <p className="text-xs text-amber-700 mb-4">Sua avaliação ajuda a manter a qualidade da plataforma.</p>
+              <div className="space-y-4">
+                <StarRating rating={0} onRate={(r) => {
+                  const comment = prompt("Deixe um comentário (opcional):");
+                  rateTechnician(ticket.id, r, comment || '');
+                }} />
+              </div>
+            </Card>
+          )}
+
+          {ticket.rating && (
+            <Card className="bg-slate-50">
+              <h3 className="font-bold mb-2">Avaliação do Cliente</h3>
+              <StarRating rating={ticket.rating.score} readonly />
+              {ticket.rating.comment && <p className="text-sm italic mt-2 text-slate-600">"{ticket.rating.comment}"</p>}
+            </Card>
+          )}
         </div>
       </div>
     );
@@ -548,6 +789,10 @@ export default function App() {
             <span className="font-bold text-xl tracking-tight hidden sm:inline">RemotoTech</span>
           </div>
           <div className="flex items-center gap-4">
+            <NotificationBell 
+              count={notifications.filter(n => !n.read).length} 
+              onClick={() => setShowNotifications(!showNotifications)} 
+            />
             <span className="text-sm text-slate-500 hidden md:inline">Logado como: <span className="font-semibold text-slate-800">{currentUser.email} ({currentUser.role})</span></span>
             {currentUser.role === 'admin' && (
               <Button variant="outline" className="text-xs" onClick={() => setView('admin_logs')}>Logs</Button>
@@ -555,6 +800,35 @@ export default function App() {
             <Button variant="outline" className="text-xs" onClick={handleLogout}>Sair</Button>
           </div>
         </div>
+        
+        {/* Notifications Dropdown */}
+        {showNotifications && (
+          <div className="absolute right-4 top-16 w-80 bg-white border rounded-xl shadow-xl z-[60] max-h-[400px] overflow-y-auto">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h3 className="font-bold">Notificações</h3>
+              <button className="text-xs text-blue-600" onClick={() => notifications.forEach(n => db.notifications.markAsRead(n.id))}>Marcar todas como lidas</button>
+            </div>
+            {notifications.map(n => (
+              <div 
+                key={n.id} 
+                className={`p-4 border-b last:border-none cursor-pointer hover:bg-slate-50 ${!n.read ? 'bg-blue-50/50' : ''}`}
+                onClick={() => {
+                  db.notifications.markAsRead(n.id);
+                  if (n.link) {
+                    setSelectedTicketId(n.link);
+                    setView('ticket');
+                  }
+                  setShowNotifications(false);
+                }}
+              >
+                <p className="text-sm font-bold">{n.title}</p>
+                <p className="text-xs text-slate-600 mt-1">{n.message}</p>
+                <p className="text-[10px] text-slate-400 mt-2">{new Date(n.createdAt).toLocaleString()}</p>
+              </div>
+            ))}
+            {notifications.length === 0 && <p className="p-8 text-center text-slate-400 italic">Nenhuma notificação.</p>}
+          </div>
+        )}
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8">

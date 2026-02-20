@@ -32,6 +32,20 @@ export const analyzeMessageSafety = async (text: string): Promise<{ isSafe: bool
   }
 };
 
+export const suggestCategory = async (description: string): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Com base na descrição de um problema técnico, sugira a melhor categoria entre: "Hardware", "Software", "Rede", "Segurança", "Outros". Responda apenas com o nome da categoria.
+      
+      Descrição: "${description}"`,
+    });
+    return response.text?.trim() || "Outros";
+  } catch {
+    return "Outros";
+  }
+};
+
 export const summarizeAuditLog = async (action: string, details: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
