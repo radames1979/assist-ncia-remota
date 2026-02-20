@@ -61,6 +61,24 @@ const Card = ({ children, className = "" }: any) => (
   </div>
 );
 
+const ConfirmationModal = ({ isOpen, title, message, onConfirm, onCancel, loading }: any) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <Card className="w-full max-w-sm shadow-2xl">
+        <h3 className="text-xl font-bold mb-2">{title}</h3>
+        <p className="text-slate-600 mb-6">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <Button variant="outline" onClick={onCancel} disabled={loading}>Cancelar</Button>
+          <Button variant="danger" onClick={onConfirm} disabled={loading}>
+            {loading ? 'Excluindo...' : 'Confirmar Exclusão'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 // Fix: Changed children type to React.ReactNode to resolve JSX tag's 'children' prop expectation errors when using expressions.
 const Badge = ({ children, status }: { children: React.ReactNode, status: string }) => {
   const colors: any = {
@@ -94,6 +112,7 @@ const TicketDetailView = ({
   onDispute, 
   onFinish, 
   onRate,
+  onDelete,
   payment
 }: any) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -105,12 +124,21 @@ const TicketDetailView = ({
     return () => unsub();
   }, [ticket.id]);
 
+  const canDelete = currentUser.role === 'admin' || (currentUser.role === 'client' && ticket.clientId === currentUser.uid && ticket.status === 'open');
+
   return (
     <div className="grid lg:grid-cols-3 gap-6">
       <div className="lg:col-span-2 space-y-6">
         <Card>
           <div className="flex justify-between items-center mb-4">
-            <Button variant="outline" onClick={onBack}>← Voltar</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onBack}>← Voltar</Button>
+              {canDelete && (
+                <Button variant="danger" className="px-3" onClick={() => onDelete(ticket.id)}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </Button>
+              )}
+            </div>
             <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
           </div>
           <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
@@ -400,6 +428,8 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, ticketId: string | null }>({ isOpen: false, ticketId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -612,6 +642,27 @@ export default function App() {
       createdAt: Date.now()
     };
     await database.chats.addMessage(ticketId, newMessage);
+  };
+
+  const handleDeleteTicket = async () => {
+    if (!deleteModal.ticketId) return;
+    setIsDeleting(true);
+    try {
+      await database.tickets.delete(deleteModal.ticketId);
+      await database.logs.add({ 
+        id: `l-${Date.now()}`, 
+        actorId: currentUser?.uid || '', 
+        action: 'DELETE_TICKET', 
+        targetRef: deleteModal.ticketId, 
+        createdAt: Date.now() 
+      });
+      setDeleteModal({ isOpen: false, ticketId: null });
+      setView('dashboard');
+    } catch (error: any) {
+      alert(`Erro ao excluir ticket: ${error.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // --- Views ---
@@ -852,6 +903,7 @@ export default function App() {
       onDispute={disputeTicket}
       onFinish={(tid) => database.tickets.update(tid, { status: 'completed' })}
       onRate={rateTechnician}
+      onDelete={(tid: string) => setDeleteModal({ isOpen: true, ticketId: tid })}
       payment={payments.find(p => p.ticketId === ticket.id)}
     />;
   };
@@ -904,6 +956,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <ConfirmationModal 
+        isOpen={deleteModal.isOpen}
+        title="Excluir Ticket"
+        message="Tem certeza que deseja excluir este ticket permanentemente? Esta ação não pode ser desfeita."
+        onConfirm={handleDeleteTicket}
+        onCancel={() => setDeleteModal({ isOpen: false, ticketId: null })}
+        loading={isDeleting}
+      />
       <header className="bg-white border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('dashboard')}>

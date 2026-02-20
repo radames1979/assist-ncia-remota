@@ -5,6 +5,7 @@ import {
   getDoc, 
   getDocs, 
   updateDoc, 
+  deleteDoc,
   query, 
   where, 
   orderBy, 
@@ -48,6 +49,9 @@ export const database = {
     },
     update: async (id: string, updates: Partial<Ticket>) => {
       await updateDoc(doc(db, "tickets", id), { ...updates, updatedAt: Date.now() });
+    },
+    delete: async (id: string) => {
+      await deleteDoc(doc(db, "tickets", id));
     },
     listenAll: (callback: (tickets: Ticket[]) => void) => {
       return onSnapshot(query(collection(db, "tickets"), orderBy("createdAt", "desc")), (snapshot) => {
