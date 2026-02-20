@@ -20,6 +20,7 @@ import { User, Ticket, Payment, Message, AuditLog, AppNotification } from "../ty
 export const database = {
   users: {
     getById: async (uid: string) => {
+      if (!uid) return null;
       const docRef = doc(db, "users", uid);
       const docSnap = await getDoc(docRef);
       return docSnap.exists() ? docSnap.data() as User : null;
@@ -37,6 +38,7 @@ export const database = {
   },
   tickets: {
     getById: async (id: string) => {
+      if (!id) return null;
       const docRef = doc(db, "tickets", id);
       const docSnap = await getDoc(docRef);
       return docSnap.exists() ? docSnap.data() as Ticket : null;
@@ -55,11 +57,13 @@ export const database = {
   },
   payments: {
     getById: async (id: string) => {
+      if (!id) return null;
       const docRef = doc(db, "payments", id);
       const docSnap = await getDoc(docRef);
       return docSnap.exists() ? docSnap.data() as Payment : null;
     },
     getByTicket: async (ticketId: string) => {
+      if (!ticketId) return null;
       const q = query(collection(db, "payments"), where("ticketId", "==", ticketId));
       const querySnapshot = await getDocs(q);
       return !querySnapshot.empty ? querySnapshot.docs[0].data() as Payment : null;
@@ -73,16 +77,18 @@ export const database = {
     listenAll: (callback: (payments: Payment[]) => void) => {
       return onSnapshot(collection(db, "payments"), (snapshot) => {
         callback(snapshot.docs.map(doc => doc.data() as Payment));
-      });
+      }, (error) => console.error("Payments listener error:", error));
     }
   },
   chats: {
     listenMessages: (ticketId: string, callback: (messages: Message[]) => void) => {
+      if (!ticketId) return () => {};
       return onSnapshot(
         query(collection(db, "tickets", ticketId, "messages"), orderBy("createdAt", "asc")),
         (snapshot) => {
           callback(snapshot.docs.map(doc => doc.data() as Message));
-        }
+        },
+        (error) => console.error("Chat listener error:", error)
       );
     },
     addMessage: async (ticketId: string, message: Message) => {
@@ -96,16 +102,18 @@ export const database = {
     listenAll: (callback: (logs: AuditLog[]) => void) => {
       return onSnapshot(query(collection(db, "logs"), orderBy("createdAt", "desc"), limit(100)), (snapshot) => {
         callback(snapshot.docs.map(doc => doc.data() as AuditLog));
-      });
+      }, (error) => console.error("Logs listener error:", error));
     }
   },
   notifications: {
     listen: (userId: string, callback: (notifications: AppNotification[]) => void) => {
+      if (!userId) return () => {};
       return onSnapshot(
         query(collection(db, "notifications"), where("userId", "==", userId), orderBy("createdAt", "desc")),
         (snapshot) => {
           callback(snapshot.docs.map(doc => doc.data() as AppNotification));
-        }
+        },
+        (error) => console.error("Notifications listener error:", error)
       );
     },
     add: async (notification: AppNotification) => {
