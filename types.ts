@@ -4,6 +4,8 @@ export type UserRole = 'admin' | 'client' | 'tech';
 export interface User {
   uid: string;
   email: string;
+  name?: string;
+  phone?: string;
   role: UserRole;
   status: 'active' | 'suspended';
   createdAt: number;

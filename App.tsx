@@ -10,7 +10,6 @@ import {
   onAuthStateChanged 
 } from 'firebase/auth';
 import { PLATFORM_FEE_PCT, TICKET_STATUS_LABELS, CATEGORIES, PAYMENT_STATUS_LABELS } from './constants';
-import { analyzeMessageSafety, summarizeAuditLog, suggestCategory } from './services/gemini';
 
 // --- UI Components ---
 
@@ -113,7 +112,7 @@ const TechTicketCard = ({ ticket, onClick, actionButton }: { ticket: Ticket, onC
       <div>
         <div className="flex justify-between items-start mb-3">
           <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status] || ticket.status}</Badge>
-          <span className="text-[10px] font-mono text-slate-400">#{ticket.id.substring(0, 6)}</span>
+          <span className="text-[10px] font-mono text-slate-400">#{ticket.id?.substring(0, 6) || '---'}</span>
         </div>
         
         <h3 className="font-bold text-lg group-hover:text-blue-600 transition-colors mb-2 line-clamp-1">{ticket.title}</h3>
@@ -305,6 +304,81 @@ const SupportModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => voi
   );
 };
 
+const InstitutionalModal = ({ isOpen, page, onClose }: { isOpen: boolean, page: 'terms' | 'privacy' | 'faq' | null, onClose: () => void }) => {
+  if (!isOpen || !page) return null;
+
+  const content = {
+    terms: {
+      title: "Termos de Uso",
+      body: (
+        <div className="space-y-4 text-sm text-slate-600">
+          <p>Bem-vindo ao RemotoTech. Ao utilizar nossa plataforma, você concorda com os seguintes termos:</p>
+          <h4 className="font-bold text-slate-800">1. Objeto</h4>
+          <p>O RemotoTech é uma plataforma de intermediação entre clientes que buscam assistência técnica e profissionais qualificados.</p>
+          <h4 className="font-bold text-slate-800">2. Pagamentos</h4>
+          <p>Todos os pagamentos devem ser realizados através da plataforma para garantir a segurança de ambas as partes. O descumprimento desta regra pode levar à suspensão da conta.</p>
+          <h4 className="font-bold text-slate-800">3. Responsabilidades</h4>
+          <p>O técnico é responsável pela qualidade do serviço prestado. O RemotoTech atua como mediador em caso de disputas.</p>
+        </div>
+      )
+    },
+    privacy: {
+      title: "Política de Privacidade",
+      body: (
+        <div className="space-y-4 text-sm text-slate-600">
+          <p>Sua privacidade é importante para nós. Veja como tratamos seus dados:</p>
+          <h4 className="font-bold text-slate-800">1. Coleta de Dados</h4>
+          <p>Coletamos seu e-mail, nome e telefone para possibilitar a comunicação e prestação dos serviços.</p>
+          <h4 className="font-bold text-slate-800">2. Uso das Informações</h4>
+          <p>Seus dados são utilizados exclusivamente para o funcionamento da plataforma e notificações sobre seus chamados.</p>
+          <h4 className="font-bold text-slate-800">3. Segurança</h4>
+          <p>Utilizamos tecnologias de ponta para garantir que seus dados e históricos de chat estejam protegidos.</p>
+        </div>
+      )
+    },
+    faq: {
+      title: "Perguntas Frequentes (FAQ)",
+      body: (
+        <div className="space-y-6 text-sm text-slate-600">
+          <div>
+            <h4 className="font-bold text-slate-800 mb-1">Como funciona o pagamento?</h4>
+            <p>O cliente realiza o PIX para os dados informados pelo técnico. O administrador confirma o recebimento e libera o início do serviço.</p>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-1">O que acontece se o serviço não for concluído?</h4>
+            <p>O cliente pode abrir uma disputa. O administrador analisará o caso e poderá reembolsar o valor ou liberar para o técnico.</p>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-1">Posso falar com o técnico por fora?</h4>
+            <p>Não recomendamos. Conversas fora do chat da plataforma não podem ser usadas como prova em caso de disputa.</p>
+          </div>
+        </div>
+      )
+    }
+  };
+
+  const active = content[page];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+      <Card className="w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6 sticky top-0 bg-white pb-2 border-b">
+          <h2 className="text-2xl font-bold text-slate-800">{active.title}</h2>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="pb-4">
+          {active.body}
+        </div>
+        <div className="mt-6 pt-4 border-t flex justify-end">
+          <Button onClick={onClose}>Fechar</Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 // --- App Pages ---
 
 const TicketDetailView = ({ 
@@ -318,10 +392,13 @@ const TicketDetailView = ({
   onRejectPayment, 
   onStartExecution, 
   onDispute, 
+  onResolveDispute,
   onFinish, 
   onRate,
   onDelete,
   onUpdate,
+  onPayWithStripe,
+  isProcessingPayment,
   payment
 }: any) => {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -587,6 +664,26 @@ const TicketDetailView = ({
                       if (proof || imageFile) await onSubmitProof(payment.id, proof, imageFile);
                     }}>Enviar Comprovante</Button>
                   </div>
+
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-slate-200"></span></div>
+                    <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-400">Ou pague agora</span></div>
+                  </div>
+
+                  <Button 
+                    variant="primary" 
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center gap-2"
+                    onClick={() => onPayWithStripe(ticket, payment)}
+                    disabled={isProcessingPayment}
+                  >
+                    {isProcessingPayment ? 'Processando...' : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                        Pagar com Stripe (Cartão/PIX)
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-[10px] text-center text-slate-400">Verificação automática e liberação imediata.</p>
                 </div>
               )}
 
@@ -604,6 +701,44 @@ const TicketDetailView = ({
             </div>
           )}
         </Card>
+
+        {ticket.status === 'disputed' && currentUser.role === 'admin' && (
+          <Card className="border-red-500 bg-red-50 shadow-lg ring-2 ring-red-200">
+            <h3 className="font-bold text-red-700 mb-2 flex items-center gap-2">
+              ⚖️ Central de Mediação (Admin)
+            </h3>
+            <p className="text-sm text-red-800 mb-4 bg-white/50 p-3 rounded border border-red-100 italic">
+              <strong>Motivo da Disputa:</strong> {ticket.disputeReason}
+            </p>
+            <div className="space-y-3">
+              <p className="text-xs text-slate-600">Como administrador, analise o chat e as evidências acima para tomar uma decisão final.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  variant="danger" 
+                  className="text-xs py-3"
+                  onClick={() => {
+                    if (confirm("Confirmar reembolso ao cliente? O ticket será cancelado.")) {
+                      onResolveDispute(ticket.id, 'client');
+                    }
+                  }}
+                >
+                  Reembolsar Cliente
+                </Button>
+                <Button 
+                  variant="primary" 
+                  className="text-xs py-3 bg-emerald-600 hover:bg-emerald-700"
+                  onClick={() => {
+                    if (confirm("Confirmar liberação ao técnico? O ticket será concluído.")) {
+                      onResolveDispute(ticket.id, 'tech');
+                    }
+                  }}
+                >
+                  Liberar para Técnico
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <Card className="bg-slate-900 text-white">
           <h3 className="font-bold mb-2">🛡️ Regras de Segurança</h3>
@@ -765,7 +900,7 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [view, setView] = useState<'landing' | 'auth' | 'dashboard' | 'ticket' | 'admin_logs'>('landing');
+  const [view, setView] = useState<'landing' | 'auth' | 'dashboard' | 'ticket' | 'admin_logs' | 'profile'>('landing');
   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -773,15 +908,20 @@ export default function App() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
-  const [isCategorizing, setIsCategorizing] = useState(false);
+  const [institutionalPage, setInstitutionalPage] = useState<'terms' | 'privacy' | 'faq' | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, ticketId: string | null }>({ isOpen: false, ticketId: null });
   const [isDeleting, setIsDeleting] = useState(false);
   const [techFilter, setTechFilter] = useState<string>('all');
   const [techCategoryFilter, setTechCategoryFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [adminPage, setAdminPage] = useState(1);
   const [techAssignedPage, setTechAssignedPage] = useState(1);
   const [techAvailablePage, setTechAvailablePage] = useState(1);
+  const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   // Auth State Listener
   useEffect(() => {
@@ -789,7 +929,11 @@ export default function App() {
       if (firebaseUser) {
         const user = await database.users.getById(firebaseUser.uid);
         setCurrentUser(user);
-        if (user) setView('dashboard');
+        if (user) {
+          setProfileName(user.name || '');
+          setProfilePhone(user.phone || '');
+          setView('dashboard');
+        }
       } else {
         setCurrentUser(null);
       }
@@ -797,6 +941,34 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Handle Stripe Return
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentSuccess = params.get('payment_success');
+    const sessionId = params.get('session_id');
+    const ticketId = params.get('ticket_id');
+
+    if (paymentSuccess === 'true' && sessionId && ticketId && payments.length > 0) {
+      const verify = async () => {
+        try {
+          const res = await fetch(`/api/verify-payment/${sessionId}`);
+          const data = await res.json();
+          if (data.status === 'paid') {
+            const payment = payments.find(p => p.ticketId === ticketId);
+            if (payment && payment.status !== 'confirmed') {
+              await confirmPayment(payment.id);
+              alert("Pagamento confirmado automaticamente via Stripe!");
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }
+        } catch (error) {
+          console.error("Verification failed", error);
+        }
+      };
+      verify();
+    }
+  }, [payments]);
 
   useEffect(() => {
     setTechAssignedPage(1);
@@ -830,18 +1002,14 @@ export default function App() {
     setView('landing');
   };
 
-  const createTicket = async (title: string, description: string, manualCategory: string, imageFile?: File) => {
+  const createTicket = async (title: string, description: string, category: string, imageFile?: File) => {
     if (!currentUser) return;
-    setIsCategorizing(true);
     
     let imageUrl = '';
     if (imageFile) {
       imageUrl = await fileToBase64(imageFile);
     }
 
-    // Gemini Auto-categorization
-    const category = manualCategory === "Outros" ? await suggestCategory(description) : manualCategory;
-    
     const newTicket: Ticket = {
       id: `t-${Date.now()}`,
       clientId: currentUser.uid,
@@ -871,8 +1039,6 @@ export default function App() {
         link: newTicket.id
       });
     });
-
-    setIsCategorizing(false);
   };
 
   const disputeTicket = async (ticketId: string, reason: string) => {
@@ -992,13 +1158,6 @@ export default function App() {
   const sendMessage = async (ticketId: string, text: string) => {
     if (!currentUser) return;
     
-    // Smart Moderation with Gemini
-    const safety = await analyzeMessageSafety(text);
-    if (!safety.isSafe) {
-      alert(`Mensagem bloqueada: ${safety.reason}`);
-      return;
-    }
-
     const newMessage: Message = {
       id: `m-${Date.now()}`,
       senderId: currentUser.uid,
@@ -1048,6 +1207,90 @@ export default function App() {
     }
   };
 
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setIsSavingProfile(true);
+    try {
+      await database.users.update(currentUser.uid, { name: profileName, phone: profilePhone });
+      setCurrentUser({ ...currentUser, name: profileName, phone: profilePhone });
+      alert("Perfil atualizado com sucesso!");
+    } catch (error: any) {
+      alert(`Erro ao salvar perfil: ${error.message}`);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const resolveDispute = async (ticketId: string, resolution: 'client' | 'tech') => {
+    if (!currentUser || currentUser.role !== 'admin') return;
+    const ticket = tickets.find(t => t.id === ticketId);
+    const payment = payments.find(p => p.ticketId === ticketId);
+    if (!ticket) return;
+
+    if (resolution === 'client') {
+      await database.tickets.update(ticketId, { status: 'cancelled' });
+      if (payment) {
+        await database.payments.update(payment.id, { status: 'rejected' });
+      }
+    } else {
+      await database.tickets.update(ticketId, { status: 'completed' });
+      if (payment) {
+        await database.payments.update(payment.id, { status: 'confirmed' });
+      }
+    }
+
+    await database.logs.add({
+      id: `l-${Date.now()}`,
+      actorId: currentUser.uid,
+      action: 'RESOLVE_DISPUTE',
+      targetRef: ticketId,
+      details: `Resolved in favor of ${resolution}`,
+      createdAt: Date.now()
+    });
+
+    const notify = async (uid: string, msg: string) => {
+      await database.notifications.add({
+        id: `n-${Date.now()}-${uid}`,
+        userId: uid,
+        title: "Disputa Resolvida",
+        message: msg,
+        type: 'info',
+        read: false,
+        createdAt: Date.now(),
+        link: ticketId
+      });
+    };
+
+    await notify(ticket.clientId, `A disputa do chamado "${ticket.title}" foi resolvida pelo administrador em favor do ${resolution === 'client' ? 'cliente' : 'técnico'}.`);
+    if (ticket.techId) {
+      await notify(ticket.techId, `A disputa do chamado "${ticket.title}" foi resolvida pelo administrador em favor do ${resolution === 'client' ? 'cliente' : 'técnico'}.`);
+    }
+    alert("Disputa resolvida com sucesso!");
+  };
+
+  const handlePayWithStripe = async (ticket: Ticket, payment: Payment) => {
+    setIsProcessingPayment(true);
+    try {
+      const response = await fetch('/api/create-checkout-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticketId: ticket.id,
+          amount: payment.amountTotal,
+          ticketTitle: ticket.title,
+        }),
+      });
+      const { url, error } = await response.json();
+      if (error) throw new Error(error);
+      window.location.href = url;
+    } catch (error: any) {
+      alert(`Erro ao iniciar pagamento: ${error.message}`);
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   // --- Views ---
 
   const renderDashboard = () => {
@@ -1056,7 +1299,12 @@ export default function App() {
     if (currentUser.role === 'admin') {
       const pendingPayments = payments.filter(p => p.status === 'proof_submitted');
       const disputedTickets = tickets.filter(t => t.status === 'disputed');
-      const allTickets = tickets;
+      const filteredTickets = tickets.filter(t => 
+        t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.id.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      const allTickets = filteredTickets;
       
       // Calculate financials from state
       const confirmedPayments = payments.filter(p => p.status === 'confirmed');
@@ -1066,6 +1314,10 @@ export default function App() {
         techPayouts: confirmedPayments.reduce((acc, p) => acc + p.techReceives, 0),
         count: confirmedPayments.length
       };
+
+      const recentTransactions = [...confirmedPayments]
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 5);
 
       const paginatedTickets = allTickets.slice((adminPage - 1) * ITEMS_PER_PAGE, adminPage * ITEMS_PER_PAGE);
 
@@ -1090,36 +1342,54 @@ export default function App() {
             </Card>
           </section>
 
-          <section>
-            <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-              💳 Pagamentos Pendentes
-              {pendingPayments.length > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingPayments.length}</span>}
-            </h2>
-            <div className="grid gap-4">
-              {pendingPayments.map(p => (
-                <Card key={p.id} className="flex justify-between items-center">
-                  <div>
-                    <p className="font-bold">Total: R$ {p.amountTotal.toFixed(2)}</p>
-                    <p className="text-sm text-slate-500">Ticket: {p.ticketId}</p>
-                    <div className="mt-2 p-2 bg-slate-100 rounded text-xs italic">
-                      Comprovante (Texto): {p.proofText || 'Nenhum texto enviado'}
+          <section className="grid lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2">
+              <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                💳 Pagamentos Pendentes
+                {pendingPayments.length > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{pendingPayments.length}</span>}
+              </h2>
+              <div className="grid gap-4">
+                {pendingPayments.map(p => (
+                  <Card key={p.id} className="flex justify-between items-center">
+                    <div>
+                      <p className="font-bold">Total: R$ {p.amountTotal.toFixed(2)}</p>
+                      <p className="text-sm text-slate-500">Ticket: {p.ticketId}</p>
+                      <div className="mt-2 p-2 bg-slate-100 rounded text-xs italic">
+                        Comprovante (Texto): {p.proofText || 'Nenhum texto enviado'}
+                      </div>
+                      {p.proofImageUrl && (
+                        <button 
+                          className="mt-2 text-blue-600 text-xs font-bold hover:underline"
+                          onClick={() => window.open(p.proofImageUrl, '_blank')}
+                        >
+                          Ver Imagem do Comprovante
+                        </button>
+                      )}
                     </div>
-                    {p.proofImageUrl && (
-                      <button 
-                        className="mt-2 text-blue-600 text-xs font-bold hover:underline"
-                        onClick={() => window.open(p.proofImageUrl, '_blank')}
-                      >
-                        Ver Imagem do Comprovante
-                      </button>
-                    )}
+                    <div className="flex gap-2">
+                      <Button variant="primary" onClick={() => confirmPayment(p.id)}>Confirmar</Button>
+                      <Button variant="danger" onClick={() => rejectPayment(p.id)}>Rejeitar</Button>
+                    </div>
+                  </Card>
+                ))}
+                {pendingPayments.length === 0 && <p className="text-slate-500 italic">Nenhum pagamento aguardando confirmação.</p>}
+              </div>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold mb-4">Últimas Transações</h2>
+              <div className="space-y-3">
+                {recentTransactions.map(p => (
+                  <div key={p.id} className="p-3 bg-white border rounded-lg text-xs flex justify-between items-center">
+                    <div>
+                      <p className="font-bold">R$ {p.amountTotal.toFixed(2)}</p>
+                      <p className="text-slate-400">{new Date(p.createdAt).toLocaleDateString()}</p>
+                    </div>
+                    <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold">CONFIRMADO</span>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="primary" onClick={() => confirmPayment(p.id)}>Confirmar</Button>
-                    <Button variant="danger" onClick={() => rejectPayment(p.id)}>Rejeitar</Button>
-                  </div>
-                </Card>
-              ))}
-              {pendingPayments.length === 0 && <p className="text-slate-500 italic">Nenhum pagamento aguardando confirmação.</p>}
+                ))}
+                {recentTransactions.length === 0 && <p className="text-slate-400 italic text-sm">Nenhuma transação confirmada.</p>}
+              </div>
             </div>
           </section>
 
@@ -1146,7 +1416,19 @@ export default function App() {
           )}
 
           <section>
-            <h2 className="text-2xl font-bold mb-4">🎫 Todos os Tickets</h2>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+              <h2 className="text-2xl font-bold">🎫 Todos os Tickets</h2>
+              <div className="relative w-full md:w-64">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input 
+                  type="text" 
+                  placeholder="Buscar tickets..." 
+                  className="w-full pl-10 pr-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setAdminPage(1); }}
+                />
+              </div>
+            </div>
             <div className="grid md:grid-cols-2 gap-4">
               {paginatedTickets.map(t => (
                 <Card key={t.id}>
@@ -1185,6 +1467,10 @@ export default function App() {
 
     if (currentUser.role === 'client') {
       const myTickets = tickets.filter(t => t.clientId === currentUser.uid);
+      const filteredMyTickets = myTickets.filter(t => 
+        t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        t.description.toLowerCase().includes(searchQuery.toLowerCase())
+      );
       return (
         <div className="space-y-8">
           <Card className="bg-blue-600 text-white border-none">
@@ -1198,7 +1484,6 @@ export default function App() {
               <div className="grid md:grid-cols-2 gap-4">
                 <input name="title" placeholder="Resumo do problema" className="p-2 rounded text-slate-900 w-full" required />
                 <select name="category" className="p-2 rounded text-slate-900 w-full" required>
-                  <option value="Outros">Auto-Categorizar (IA)</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -1207,16 +1492,28 @@ export default function App() {
                 <label className="text-xs font-bold opacity-80">Anexar Foto do Problema (Opcional):</label>
                 <input type="file" name="image" accept="image/*" className="text-xs" />
               </div>
-              <Button type="submit" variant="secondary" className="w-full md:w-auto" disabled={isCategorizing}>
-                {isCategorizing ? 'Analisando...' : 'Criar Chamado'}
+              <Button type="submit" variant="secondary" className="w-full md:w-auto">
+                Criar Chamado
               </Button>
             </form>
           </Card>
 
           <section>
-            <h2 className="text-2xl font-bold mb-4">Seus Chamados</h2>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+              <h2 className="text-2xl font-bold">Seus Chamados</h2>
+              <div className="relative w-full md:w-64">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input 
+                  type="text" 
+                  placeholder="Buscar seus chamados..." 
+                  className="w-full pl-10 pr-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
             <div className="grid md:grid-cols-2 gap-4">
-              {myTickets.map(t => (
+              {filteredMyTickets.map(t => (
                 <Card key={t.id} className="hover:border-blue-300 transition-colors cursor-pointer" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-bold text-lg">{t.title}</h3>
@@ -1225,7 +1522,7 @@ export default function App() {
                   <p className="text-sm text-slate-500">Categoria: {t.category}</p>
                 </Card>
               ))}
-              {myTickets.length === 0 && <p className="text-slate-500 italic">Você ainda não criou nenhum chamado.</p>}
+              {filteredMyTickets.length === 0 && <p className="text-slate-500 italic">Nenhum chamado encontrado.</p>}
             </div>
           </section>
         </div>
@@ -1242,24 +1539,92 @@ export default function App() {
       const filteredAssigned = myAssignedTickets.filter(t => {
         const statusMatch = techFilter === 'all' ? true : t.status === techFilter;
         const categoryMatch = techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
-        return statusMatch && categoryMatch;
+        const searchMatch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        return statusMatch && categoryMatch && searchMatch;
       });
 
       const filteredAvailable = availableTickets.filter(t => {
-        return techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
+        const categoryMatch = techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
+        const searchMatch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        return categoryMatch && searchMatch;
       });
 
       const paginatedAssigned = filteredAssigned.slice((techAssignedPage - 1) * ITEMS_PER_PAGE, techAssignedPage * ITEMS_PER_PAGE);
       const paginatedAvailable = filteredAvailable.slice((techAvailablePage - 1) * ITEMS_PER_PAGE, techAvailablePage * ITEMS_PER_PAGE);
 
+      const techPayments = payments.filter(p => p.techId === currentUser.uid && p.status === 'confirmed');
+      const techFinancials = {
+        totalEarned: techPayments.filter(p => {
+          const t = tickets.find(ticket => ticket.id === p.ticketId);
+          return t?.status === 'completed';
+        }).reduce((acc, p) => acc + p.techReceives, 0),
+        pendingBalance: techPayments.filter(p => {
+          const t = tickets.find(ticket => ticket.id === p.ticketId);
+          return t?.status !== 'completed';
+        }).reduce((acc, p) => acc + p.techReceives, 0),
+        monthlyEarned: techPayments.filter(p => {
+          const t = tickets.find(ticket => ticket.id === p.ticketId);
+          const date = new Date(p.updatedAt || p.createdAt);
+          const now = new Date();
+          return t?.status === 'completed' && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+        }).reduce((acc, p) => acc + p.techReceives, 0)
+      };
+
       return (
         <div className="space-y-8">
+          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card className="bg-emerald-600 text-white border-none shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs opacity-70 uppercase font-bold mb-1">Total Ganho</p>
+                  <p className="text-3xl font-bold">R$ {techFinancials.totalEarned.toFixed(2)}</p>
+                </div>
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+              </div>
+            </Card>
+            <Card className="bg-blue-600 text-white border-none shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs opacity-70 uppercase font-bold mb-1">Saldo a Receber</p>
+                  <p className="text-3xl font-bold">R$ {techFinancials.pendingBalance.toFixed(2)}</p>
+                </div>
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+              </div>
+              <p className="text-[10px] mt-2 opacity-60 italic">* Pagamentos confirmados de serviços em andamento.</p>
+            </Card>
+            <Card className="bg-slate-900 text-white border-none shadow-lg">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="text-xs opacity-70 uppercase font-bold mb-1">Ganhos no Mês</p>
+                  <p className="text-3xl font-bold">R$ {techFinancials.monthlyEarned.toFixed(2)}</p>
+                </div>
+                <div className="p-2 bg-white/10 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                </div>
+              </div>
+            </Card>
+          </section>
+
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
               <h2 className="text-2xl font-bold text-slate-800">Painel do Técnico</h2>
               <p className="text-sm text-slate-500">Gerencie seus atendimentos e encontre novos chamados.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+              <div className="relative flex-1 lg:w-64">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <input 
+                  type="text" 
+                  placeholder="Buscar chamados..." 
+                  className="w-full pl-10 pr-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white"
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setTechAssignedPage(1); setTechAvailablePage(1); }}
+                />
+              </div>
               <div className="flex items-center gap-2">
                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status:</label>
                 <select 
@@ -1365,10 +1730,13 @@ export default function App() {
       onRejectPayment={rejectPayment}
       onStartExecution={(tid) => database.tickets.update(tid, { status: 'in_progress' })}
       onDispute={disputeTicket}
+      onResolveDispute={resolveDispute}
       onFinish={(tid) => database.tickets.update(tid, { status: 'completed' })}
       onRate={rateTechnician}
       onDelete={(tid: string) => setDeleteModal({ isOpen: true, ticketId: tid })}
       onUpdate={(tid: string, updates: any) => database.tickets.update(tid, updates)}
+      onPayWithStripe={handlePayWithStripe}
+      isProcessingPayment={isProcessingPayment}
       payment={payments.find(p => p.ticketId === ticket.id)}
     />;
   };
@@ -1408,6 +1776,83 @@ export default function App() {
     </div>
   );
 
+  const renderProfile = () => {
+    if (!currentUser) return null;
+
+    return (
+      <div className="max-w-2xl mx-auto space-y-8">
+        <div className="flex items-center gap-4 mb-8">
+          <Button variant="outline" onClick={() => setView('dashboard')}>← Voltar</Button>
+          <h2 className="text-3xl font-extrabold">Seu Perfil</h2>
+        </div>
+
+        <Card>
+          <form onSubmit={handleSaveProfile} className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500 uppercase">Email (Não editável)</label>
+                <input 
+                  type="email" 
+                  value={currentUser.email} 
+                  disabled 
+                  className="w-full p-3 bg-slate-100 border rounded-xl text-slate-500 cursor-not-allowed"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500 uppercase">Função</label>
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-700 font-bold uppercase text-xs">
+                  {currentUser.role === 'admin' ? 'Administrador' : currentUser.role === 'tech' ? 'Técnico' : 'Cliente'}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500 uppercase">Nome Completo</label>
+                <input 
+                  type="text" 
+                  value={profileName} 
+                  onChange={e => setProfileName(e.target.value)} 
+                  placeholder="Seu nome"
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-500 uppercase">Telefone / WhatsApp</label>
+                <input 
+                  type="text" 
+                  value={profilePhone} 
+                  onChange={e => setProfilePhone(e.target.value)} 
+                  placeholder="(00) 00000-0000"
+                  className="w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t">
+              <Button type="submit" className="w-full md:w-auto px-8" disabled={isSavingProfile}>
+                {isSavingProfile ? 'Salvando...' : 'Salvar Alterações'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+
+        {currentUser.role === 'tech' && (
+          <Card className="bg-blue-600 text-white border-none">
+            <h3 className="font-bold text-lg mb-2">Estatísticas de Técnico</h3>
+            <div className="grid grid-cols-2 gap-4 mt-4">
+              <div className="bg-white/10 p-4 rounded-xl">
+                <p className="text-xs opacity-70 uppercase font-bold">Avaliação Média</p>
+                <p className="text-2xl font-bold">{currentUser.rating?.toFixed(1) || 'N/A'}</p>
+              </div>
+              <div className="bg-white/10 p-4 rounded-xl">
+                <p className="text-xs opacity-70 uppercase font-bold">Total de Atendimentos</p>
+                <p className="text-2xl font-bold">{currentUser.totalRatings || 0}</p>
+              </div>
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
   // --- Main Layout ---
 
   if (authLoading) return (
@@ -1433,9 +1878,14 @@ export default function App() {
         isOpen={showSupport} 
         onClose={() => setShowSupport(false)} 
       />
+      <InstitutionalModal 
+        isOpen={!!institutionalPage} 
+        page={institutionalPage} 
+        onClose={() => setInstitutionalPage(null)} 
+      />
       <header className="bg-white border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('dashboard')}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('dashboard'); setSearchQuery(''); }}>
             <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold">R</div>
             <span className="font-bold text-xl tracking-tight hidden sm:inline">RemotoTech</span>
           </div>
@@ -1444,7 +1894,18 @@ export default function App() {
               count={notifications.filter(n => !n.read).length} 
               onClick={() => setShowNotifications(!showNotifications)} 
             />
-            <span className="text-sm text-slate-500 hidden md:inline">Logado como: <span className="font-semibold text-slate-800">{currentUser.email} ({currentUser.role})</span></span>
+            <div 
+              className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded-lg transition-colors"
+              onClick={() => setView('profile')}
+            >
+              <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold text-xs">
+                {currentUser.name ? currentUser.name.substring(0, 1).toUpperCase() : (currentUser.email?.substring(0, 1).toUpperCase() || '?')}
+              </div>
+              <div className="hidden md:flex flex-col">
+                <span className="text-xs font-bold text-slate-800 leading-none">{currentUser.name || 'Seu Perfil'}</span>
+                <span className="text-[10px] text-slate-500 uppercase font-bold">{currentUser.role}</span>
+              </div>
+            </div>
             {currentUser.role === 'admin' && (
               <Button variant="outline" className="text-xs" onClick={() => setView('admin_logs')}>Logs</Button>
             )}
@@ -1490,6 +1951,7 @@ export default function App() {
         {view === 'dashboard' && renderDashboard()}
         {view === 'ticket' && renderTicketDetail()}
         {view === 'admin_logs' && renderAdminLogs()}
+        {view === 'profile' && renderProfile()}
       </main>
 
       <footer className="bg-slate-100 border-t py-8 mt-12 text-center text-slate-400 text-sm">
@@ -1502,9 +1964,9 @@ export default function App() {
             <h4 className="font-bold text-slate-800 mb-3">Links Úteis</h4>
             <ul className="text-xs space-y-2">
               <li><button onClick={() => setView('dashboard')} className="hover:text-blue-600 transition-colors">Dashboard</button></li>
-              <li><button onClick={() => setShowSupport(true)} className="hover:text-blue-600 transition-colors">Central de Suporte</button></li>
-              <li><button className="hover:text-blue-600 transition-colors">Termos de Uso</button></li>
-              <li><button className="hover:text-blue-600 transition-colors">Privacidade</button></li>
+              <li><button onClick={() => setInstitutionalPage('faq')} className="hover:text-blue-600 transition-colors">Perguntas Frequentes (FAQ)</button></li>
+              <li><button onClick={() => setInstitutionalPage('terms')} className="hover:text-blue-600 transition-colors">Termos de Uso</button></li>
+              <li><button onClick={() => setInstitutionalPage('privacy')} className="hover:text-blue-600 transition-colors">Privacidade</button></li>
             </ul>
           </div>
           <div>
