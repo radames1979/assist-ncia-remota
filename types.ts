@@ -47,6 +47,8 @@ export interface Payment {
   amountTotal: number;
   platformFee: number;
   techReceives: number;
+  pixKey?: string;
+  pixQRCode?: string;
   proofText?: string;
   proofImageUrl?: string;
   confirmedBy?: string;

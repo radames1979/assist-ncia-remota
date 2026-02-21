@@ -97,6 +97,214 @@ const Badge = ({ children, status }: { children: React.ReactNode, status: string
   return <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${colors[status] || "bg-gray-100"}`}>{children}</span>;
 };
 
+const TechTicketCard = ({ ticket, onClick, actionButton }: { ticket: Ticket, onClick: () => void, actionButton?: React.ReactNode, key?: any }) => {
+  const [client, setClient] = useState<User | null>(null);
+  const [tech, setTech] = useState<User | null>(null);
+
+  useEffect(() => {
+    database.users.getById(ticket.clientId).then(setClient);
+    if (ticket.techId) {
+      database.users.getById(ticket.techId).then(setTech);
+    }
+  }, [ticket.clientId, ticket.techId]);
+
+  return (
+    <Card className="hover:border-blue-300 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between h-full" onClick={onClick}>
+      <div>
+        <div className="flex justify-between items-start mb-3">
+          <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status] || ticket.status}</Badge>
+          <span className="text-[10px] font-mono text-slate-400">#{ticket.id.substring(0, 6)}</span>
+        </div>
+        
+        <h3 className="font-bold text-lg group-hover:text-blue-600 transition-colors mb-2 line-clamp-1">{ticket.title}</h3>
+        
+        <div className="space-y-2 mb-4">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" title="Cliente"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <span className="truncate">Cliente: {client?.email || 'Carregando...'}</span>
+          </div>
+          {ticket.techId && (
+            <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" title="Técnico"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span className="truncate">Técnico: {tech?.email || 'Carregando...'}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>{new Date(ticket.createdAt).toLocaleDateString()}</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+            <span>{ticket.category}</span>
+          </div>
+        </div>
+
+        <p className="text-sm text-slate-600 line-clamp-2 mb-4 bg-slate-50 p-2 rounded border border-slate-100 italic">
+          {ticket.description}
+        </p>
+      </div>
+
+      <div className="mt-auto pt-4 border-t border-slate-100 flex justify-between items-center">
+        <div className="flex flex-col">
+          {ticket.budgetAmount ? (
+            <span className="text-sm font-bold text-green-600">R$ {ticket.budgetAmount.toFixed(2)}</span>
+          ) : (
+            <span className="text-[10px] text-slate-400 italic">Aguardando orçamento</span>
+          )}
+        </div>
+        {actionButton && <div onClick={(e) => e.stopPropagation()}>{actionButton}</div>}
+      </div>
+    </Card>
+  );
+};
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+  });
+};
+
+const ITEMS_PER_PAGE = 6;
+
+const Pagination = ({ currentPage, totalItems, itemsPerPage, onPageChange }: any) => {
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  if (totalPages <= 1) return null;
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const showMax = 3; // Number of page buttons to show around current page
+
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('...');
+      }
+
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+      }
+
+      if (currentPage < totalPages - 2) {
+        pages.push('...');
+      }
+      
+      if (!pages.includes(totalPages)) {
+        pages.push(totalPages);
+      }
+    }
+    return pages;
+  };
+
+  return (
+    <div className="flex justify-center items-center gap-1 mt-8">
+      <Button 
+        variant="outline" 
+        className="px-2 py-1 h-8 sm:h-10 w-8 sm:w-10 flex items-center justify-center" 
+        disabled={currentPage === 1} 
+        onClick={() => onPageChange(currentPage - 1)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </Button>
+
+      <div className="flex items-center gap-1">
+        {getPageNumbers().map((page, idx) => (
+          <React.Fragment key={idx}>
+            {page === '...' ? (
+              <span className="px-1 sm:px-2 text-slate-400 text-xs sm:text-sm">...</span>
+            ) : (
+              <button
+                onClick={() => onPageChange(page)}
+                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                  currentPage === page
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                    : "text-slate-600 hover:bg-slate-100 border border-transparent hover:border-slate-200"
+                }`}
+              >
+                {page}
+              </button>
+            )}
+          </React.Fragment>
+        ))}
+      </div>
+
+      <Button 
+        variant="outline" 
+        className="px-2 py-1 h-8 sm:h-10 w-8 sm:w-10 flex items-center justify-center" 
+        disabled={currentPage === totalPages} 
+        onClick={() => onPageChange(currentPage + 1)}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </Button>
+    </div>
+  );
+};
+
+const SupportModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <Card className="w-full max-w-md shadow-2xl relative">
+        <button 
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Suporte RemotoTech
+        </h3>
+        <p className="text-slate-600 mb-6 text-sm">
+          Está com problemas técnicos na plataforma ou dúvidas sobre pagamentos? Nossa equipe está pronta para ajudar.
+        </p>
+        
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <div className="p-2 bg-blue-100 rounded text-blue-600">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            </div>
+            <div>
+              <p className="font-bold text-sm">E-mail de Suporte</p>
+              <p className="text-sm text-slate-500">suporte@remototech.com</p>
+            </div>
+          </div>
+          
+          <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <div className="p-2 bg-emerald-100 rounded text-emerald-600">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+            </div>
+            <div>
+              <p className="font-bold text-sm">WhatsApp Financeiro</p>
+              <p className="text-sm text-slate-500">(11) 99999-9999</p>
+            </div>
+          </div>
+          
+          <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+            <div className="p-2 bg-amber-100 rounded text-amber-600">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div>
+              <p className="font-bold text-sm">Horário de Atendimento</p>
+              <p className="text-sm text-slate-500">Segunda a Sexta, das 09h às 18h</p>
+            </div>
+          </div>
+        </div>
+        
+        <Button className="w-full mt-6" onClick={onClose}>Entendi</Button>
+      </Card>
+    </div>
+  );
+};
+
 // --- App Pages ---
 
 const TicketDetailView = ({ 
@@ -113,10 +321,17 @@ const TicketDetailView = ({
   onFinish, 
   onRate,
   onDelete,
+  onUpdate,
   payment
 }: any) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [client, setClient] = useState<User | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(ticket.title);
+  const [editDescription, setEditDescription] = useState(ticket.description);
+  const [pixQRCode, setPixQRCode] = useState<string>('');
+  const [isUploadingQR, setIsUploadingQR] = useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const unsub = database.chats.listenMessages(ticket.id, setMessages);
@@ -124,7 +339,19 @@ const TicketDetailView = ({
     return () => unsub();
   }, [ticket.id]);
 
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
   const canDelete = currentUser.role === 'admin' || (currentUser.role === 'client' && ticket.clientId === currentUser.uid && ticket.status === 'open');
+  const canEdit = currentUser.role === 'admin' || (currentUser.role === 'client' && ticket.clientId === currentUser.uid && (ticket.status === 'open' || ticket.status === 'assigned'));
+
+  const handleSave = async () => {
+    await onUpdate(ticket.id, { title: editTitle, description: editDescription });
+    setIsEditing(false);
+  };
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
@@ -133,6 +360,11 @@ const TicketDetailView = ({
           <div className="flex justify-between items-center mb-4">
             <div className="flex gap-2">
               <Button variant="outline" onClick={onBack}>← Voltar</Button>
+              {canEdit && !isEditing && (
+                <Button variant="secondary" className="px-3" onClick={() => setIsEditing(true)}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </Button>
+              )}
               {canDelete && (
                 <Button variant="danger" className="px-3" onClick={() => onDelete(ticket.id)}>
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -141,8 +373,34 @@ const TicketDetailView = ({
             </div>
             <Badge status={ticket.status}>{TICKET_STATUS_LABELS[ticket.status]}</Badge>
           </div>
-          <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
-          <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap mb-4">{ticket.description}</p>
+          
+          {isEditing ? (
+            <div className="space-y-4">
+              <input 
+                className="text-3xl font-extrabold w-full p-2 border rounded-lg"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+              <textarea 
+                className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap w-full h-32 border"
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button onClick={handleSave}>Salvar Alterações</Button>
+                <Button variant="outline" onClick={() => {
+                  setIsEditing(false);
+                  setEditTitle(ticket.title);
+                  setEditDescription(ticket.description);
+                }}>Cancelar</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-3xl font-extrabold mb-2">{ticket.title}</h1>
+              <p className="text-slate-600 bg-slate-50 p-4 rounded-lg whitespace-pre-wrap mb-4">{ticket.description}</p>
+            </>
+          )}
           {ticket.imageUrl && (
             <div className="mt-4">
               <p className="text-xs font-bold text-slate-400 uppercase mb-2">Anexo do Problema:</p>
@@ -151,27 +409,59 @@ const TicketDetailView = ({
           )}
         </Card>
 
-        <Card className="flex flex-col h-[500px]">
-          <h3 className="font-bold text-lg mb-4">Chat Interno (Seguro)</h3>
-          <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
+        <Card className="flex flex-col h-[500px] border-slate-200 shadow-lg">
+          <div className="flex justify-between items-center mb-4 border-b pb-2">
+            <h3 className="font-bold text-lg flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+              Chat de Atendimento
+            </h3>
+            <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-bold animate-pulse">LIVE</span>
+          </div>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2 scroll-smooth">
             {messages.map(m => (
               <div key={m.id} className={`flex ${m.senderId === currentUser.uid ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[80%] p-3 rounded-lg ${m.senderId === currentUser.uid ? 'bg-blue-600 text-white' : 'bg-slate-100'}`}>
-                  <p className="text-xs opacity-75 mb-1 font-bold">{m.senderRole.toUpperCase()}</p>
-                  <p className="text-sm">{m.text}</p>
-                  <p className="text-[10px] text-right mt-1 opacity-50">{new Date(m.createdAt).toLocaleTimeString()}</p>
+                <div className={`max-w-[85%] p-3 rounded-2xl shadow-sm ${
+                  m.senderId === currentUser.uid 
+                    ? 'bg-blue-600 text-white rounded-tr-none' 
+                    : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200'
+                }`}>
+                  <div className="flex justify-between items-center gap-4 mb-1">
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${m.senderId === currentUser.uid ? 'text-blue-100' : 'text-slate-500'}`}>
+                      {m.senderRole === 'tech' ? '🛠️ Técnico' : m.senderRole === 'client' ? '👤 Cliente' : '🛡️ Admin'}
+                    </p>
+                    <p className={`text-[9px] opacity-70 ${m.senderId === currentUser.uid ? 'text-blue-100' : 'text-slate-400'}`}>
+                      {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+                  <p className="text-sm leading-relaxed">{m.text}</p>
                 </div>
               </div>
             ))}
-            {messages.length === 0 && <p className="text-center text-slate-400 italic mt-10">Inicie a conversa para alinhar o atendimento.</p>}
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="opacity-20"><path d="m3 21 1.9-5.7a8.5 8.5 0 1 1 3.8 3.8z"/></svg>
+                <p className="text-sm italic">Inicie a conversa para alinhar o atendimento.</p>
+              </div>
+            )}
           </div>
           <form onSubmit={(e: any) => {
             e.preventDefault();
-            onSendMessage(ticket.id, e.target.msg.value);
-            e.target.reset();
+            const msg = e.target.msg.value.trim();
+            if (msg) {
+              onSendMessage(ticket.id, msg);
+              e.target.reset();
+            }
           }} className="flex gap-2 border-t pt-4">
-            <input name="msg" placeholder="Digite sua mensagem..." className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required />
-            <Button type="submit">Enviar</Button>
+            <input 
+              name="msg" 
+              autoComplete="off"
+              placeholder="Digite sua mensagem..." 
+              className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all text-sm" 
+              required 
+            />
+            <Button type="submit" className="rounded-xl px-6">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </Button>
           </form>
         </Card>
       </div>
@@ -203,12 +493,40 @@ const TicketDetailView = ({
           <h3 className="font-bold text-lg mb-4">Informações de Pagamento</h3>
           {!payment && currentUser.role === 'tech' && (
             <div className="space-y-4">
-              <p className="text-sm text-slate-500 italic">Defina o orçamento para o cliente realizar o pagamento via PIX.</p>
-              <input type="number" id="budgetInput" placeholder="Valor Total (R$)" className="w-full p-2 border rounded" />
-              <Button className="w-full" onClick={() => {
+              <p className="text-sm text-slate-500 italic">Defina o orçamento e os dados de pagamento PIX para o cliente.</p>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase">Valor Total (R$):</label>
+                <input type="number" id="budgetInput" placeholder="Ex: 150.00" className="w-full p-2 border rounded mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase">Chave PIX / ID Transação:</label>
+                <input type="text" id="pixKeyInput" placeholder="Sua chave PIX" className="w-full p-2 border rounded mt-1" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase">QR Code PIX (Opcional):</label>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  className="w-full text-xs mt-1" 
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setIsUploadingQR(true);
+                      const base64 = await fileToBase64(file);
+                      setPixQRCode(base64);
+                      setIsUploadingQR(false);
+                    }
+                  }}
+                />
+                {pixQRCode && <img src={pixQRCode} alt="Preview QR" className="mt-2 h-20 w-20 object-contain border rounded" />}
+              </div>
+              <Button className="w-full" disabled={isUploadingQR} onClick={() => {
                 const val = parseFloat((document.getElementById('budgetInput') as HTMLInputElement).value);
-                if (val > 0) onSetBudget(ticket.id, val);
-              }}>Enviar Orçamento</Button>
+                const key = (document.getElementById('pixKeyInput') as HTMLInputElement).value;
+                if (val > 0) onSetBudget(ticket.id, val, key, pixQRCode);
+              }}>
+                {isUploadingQR ? 'Processando QR...' : 'Enviar Orçamento'}
+              </Button>
             </div>
           )}
 
@@ -228,19 +546,47 @@ const TicketDetailView = ({
               </div>
 
               {currentUser.role === 'client' && payment.status === 'pending' && (
-                <div className="pt-4 border-t">
-                  <p className="text-xs font-bold text-blue-700 mb-2 uppercase">Instruções:</p>
-                  <p className="text-sm mb-4">Envie o PIX para a chave do Admin (PIX: financeiro@remototech.com) e anexe o comprovante abaixo.</p>
-                  <textarea id="proofInput" placeholder="Cole o texto do comprovante aqui..." className="w-full p-2 border rounded h-20 text-sm mb-2" />
-                  <div className="mb-4">
-                    <label className="text-xs font-bold opacity-80 block mb-1">Anexar Print do Comprovante:</label>
-                    <input type="file" id="proofImageInput" accept="image/*" className="text-xs" />
+                <div className="pt-4 border-t space-y-4">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <p className="text-xs font-bold text-blue-700 mb-2 uppercase tracking-wider">Dados para Pagamento PIX:</p>
+                    
+                    {payment.pixQRCode && (
+                      <div className="flex justify-center mb-4 bg-white p-2 rounded border">
+                        <img src={payment.pixQRCode} alt="QR Code PIX" className="max-w-[150px] h-auto" />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <p className="text-xs text-slate-500">Chave PIX / ID:</p>
+                      <div className="flex items-center gap-2">
+                        <code className="bg-white px-2 py-1 rounded border text-sm flex-1 break-all">{payment.pixKey || 'Não informada'}</code>
+                        {payment.pixKey && (
+                          <button 
+                            onClick={() => navigator.clipboard.writeText(payment.pixKey!)}
+                            className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+                            title="Copiar Chave"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <Button className="w-full" onClick={async () => {
-                    const proof = (document.getElementById('proofInput') as HTMLTextAreaElement).value;
-                    const imageFile = (document.getElementById('proofImageInput') as HTMLInputElement).files?.[0];
-                    if (proof || imageFile) await onSubmitProof(payment.id, proof, imageFile);
-                  }}>Enviar Comprovante</Button>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold text-slate-500 uppercase">Confirmar Pagamento:</p>
+                    <p className="text-[10px] text-slate-400">Após realizar o PIX, anexe o comprovante abaixo para validação.</p>
+                    <textarea id="proofInput" placeholder="Cole o texto do comprovante aqui..." className="w-full p-2 border rounded h-20 text-sm" />
+                    <div>
+                      <label className="text-xs font-bold opacity-80 block mb-1">Print do Comprovante:</label>
+                      <input type="file" id="proofImageInput" accept="image/*" className="text-xs w-full" />
+                    </div>
+                    <Button className="w-full" onClick={async () => {
+                      const proof = (document.getElementById('proofInput') as HTMLTextAreaElement).value;
+                      const imageFile = (document.getElementById('proofImageInput') as HTMLInputElement).files?.[0];
+                      if (proof || imageFile) await onSubmitProof(payment.id, proof, imageFile);
+                    }}>Enviar Comprovante</Button>
+                  </div>
                 </div>
               )}
 
@@ -426,19 +772,16 @@ export default function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [isCategorizing, setIsCategorizing] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, ticketId: string | null }>({ isOpen: false, ticketId: null });
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
+  const [techFilter, setTechFilter] = useState<string>('all');
+  const [techCategoryFilter, setTechCategoryFilter] = useState<string>('all');
+  const [adminPage, setAdminPage] = useState(1);
+  const [techAssignedPage, setTechAssignedPage] = useState(1);
+  const [techAvailablePage, setTechAvailablePage] = useState(1);
 
   // Auth State Listener
   useEffect(() => {
@@ -454,6 +797,11 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    setTechAssignedPage(1);
+    setTechAvailablePage(1);
+  }, [techFilter, techCategoryFilter]);
 
   // Real-time Listeners
   useEffect(() => {
@@ -575,11 +923,26 @@ export default function App() {
 
   const acceptTicket = async (ticketId: string) => {
     if (!currentUser || currentUser.role !== 'tech') return;
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+
     await database.tickets.update(ticketId, { techId: currentUser.uid, status: 'assigned' });
     await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'ACCEPT_TICKET', targetRef: ticketId, createdAt: Date.now() });
+
+    // Notify Client
+    await database.notifications.add({
+      id: `n-${Date.now()}-${ticket.clientId}`,
+      userId: ticket.clientId,
+      title: "Técnico Atribuído",
+      message: `O técnico ${currentUser.email} aceitou seu chamado "${ticket.title}".`,
+      type: 'info',
+      read: false,
+      createdAt: Date.now(),
+      link: ticket.id
+    });
   };
 
-  const setBudget = async (ticketId: string, amount: number) => {
+  const setBudget = async (ticketId: string, amount: number, pixKey?: string, pixQRCode?: string) => {
     const ticket = await database.tickets.getById(ticketId);
     if (!ticket || !ticket.techId) return;
 
@@ -596,6 +959,8 @@ export default function App() {
       amountTotal: amount,
       platformFee: fee,
       techReceives: techGets,
+      pixKey,
+      pixQRCode,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -642,6 +1007,24 @@ export default function App() {
       createdAt: Date.now()
     };
     await database.chats.addMessage(ticketId, newMessage);
+
+    // Notify the other party
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (ticket) {
+      const recipientId = currentUser.role === 'client' ? ticket.techId : ticket.clientId;
+      if (recipientId) {
+        await database.notifications.add({
+          id: `n-chat-${Date.now()}`,
+          userId: recipientId,
+          title: "Nova Mensagem",
+          message: `Você recebeu uma nova mensagem no chamado "${ticket.title}".`,
+          type: 'info',
+          read: false,
+          createdAt: Date.now(),
+          link: ticket.id
+        });
+      }
+    }
   };
 
   const handleDeleteTicket = async () => {
@@ -683,6 +1066,8 @@ export default function App() {
         techPayouts: confirmedPayments.reduce((acc, p) => acc + p.techReceives, 0),
         count: confirmedPayments.length
       };
+
+      const paginatedTickets = allTickets.slice((adminPage - 1) * ITEMS_PER_PAGE, adminPage * ITEMS_PER_PAGE);
 
       return (
         <div className="space-y-8">
@@ -763,7 +1148,7 @@ export default function App() {
           <section>
             <h2 className="text-2xl font-bold mb-4">🎫 Todos os Tickets</h2>
             <div className="grid md:grid-cols-2 gap-4">
-              {allTickets.map(t => (
+              {paginatedTickets.map(t => (
                 <Card key={t.id}>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="font-bold text-lg">{t.title}</h3>
@@ -787,6 +1172,12 @@ export default function App() {
                 </Card>
               ))}
             </div>
+            <Pagination 
+              currentPage={adminPage} 
+              totalItems={allTickets.length} 
+              itemsPerPage={ITEMS_PER_PAGE} 
+              onPageChange={setAdminPage} 
+            />
           </section>
         </div>
       );
@@ -844,40 +1235,113 @@ export default function App() {
     if (currentUser.role === 'tech') {
       const myAssignedTickets = tickets.filter(t => t.techId === currentUser.uid);
       const availableTickets = tickets.filter(t => t.status === 'open' && !t.techId);
+      
+      const showAssigned = techFilter === 'all' || techFilter !== 'open';
+      const showAvailable = techFilter === 'all' || techFilter === 'open';
+
+      const filteredAssigned = myAssignedTickets.filter(t => {
+        const statusMatch = techFilter === 'all' ? true : t.status === techFilter;
+        const categoryMatch = techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
+        return statusMatch && categoryMatch;
+      });
+
+      const filteredAvailable = availableTickets.filter(t => {
+        return techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
+      });
+
+      const paginatedAssigned = filteredAssigned.slice((techAssignedPage - 1) * ITEMS_PER_PAGE, techAssignedPage * ITEMS_PER_PAGE);
+      const paginatedAvailable = filteredAvailable.slice((techAvailablePage - 1) * ITEMS_PER_PAGE, techAvailablePage * ITEMS_PER_PAGE);
+
       return (
         <div className="space-y-8">
-          <section>
-            <h2 className="text-2xl font-bold mb-4">Tickets Atribuídos a Você</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              {myAssignedTickets.map(t => (
-                <Card key={t.id} className="hover:border-blue-300 transition-colors cursor-pointer" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-bold text-lg">{t.title}</h3>
-                    <Badge status={t.status}>{TICKET_STATUS_LABELS[t.status]}</Badge>
-                  </div>
-                  <p className="text-sm text-slate-600 mb-2">Cliente ID: {t.clientId}</p>
-                  {t.budgetAmount && <p className="text-sm font-bold text-green-600">Orc: R$ {t.budgetAmount.toFixed(2)}</p>}
-                </Card>
-              ))}
-              {myAssignedTickets.length === 0 && <p className="text-slate-500 italic">Nenhum ticket atribuído ainda.</p>}
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800">Painel do Técnico</h2>
+              <p className="text-sm text-slate-500">Gerencie seus atendimentos e encontre novos chamados.</p>
             </div>
-          </section>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Status:</label>
+                <select 
+                  value={techFilter} 
+                  onChange={(e) => setTechFilter(e.target.value)}
+                  className="p-2 border rounded-lg bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                >
+                  <option value="all">Todos</option>
+                  <option value="open">Aberto (Disponíveis)</option>
+                  <option value="assigned">Atribuído</option>
+                  <option value="in_progress">Em Execução</option>
+                  <option value="completed">Concluído</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Categoria:</label>
+                <select 
+                  value={techCategoryFilter} 
+                  onChange={(e) => setTechCategoryFilter(e.target.value)}
+                  className="p-2 border rounded-lg bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium"
+                >
+                  <option value="all">Todas as Categorias</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
 
-          <section>
-            <h2 className="text-2xl font-bold mb-4 text-slate-800">Tickets em Aberto</h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              {availableTickets.map(t => (
-                <Card key={t.id} className="flex flex-col justify-between">
-                  <div>
-                    <h3 className="font-bold text-lg">{t.title}</h3>
-                    <p className="text-sm text-slate-600 mb-4 line-clamp-2">{t.description}</p>
-                  </div>
-                  <Button variant="primary" className="w-full" onClick={() => acceptTicket(t.id)}>Aceitar Ticket</Button>
-                </Card>
-              ))}
-              {availableTickets.length === 0 && <p className="text-slate-500 italic">Nenhum ticket em aberto no momento.</p>}
-            </div>
-          </section>
+          {showAssigned && (
+            <section>
+              <h2 className="text-xl font-bold mb-4 text-slate-700 flex items-center gap-2">
+                <span className="w-2 h-6 bg-blue-600 rounded-full"></span>
+                Seus Tickets {techFilter !== 'all' && techFilter !== 'open' ? `(${TICKET_STATUS_LABELS[techFilter as TicketStatus]})` : ''}
+              </h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedAssigned.map(t => (
+                  <TechTicketCard 
+                    key={t.id} 
+                    ticket={t} 
+                    onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }} 
+                  />
+                ))}
+                {filteredAssigned.length === 0 && <p className="text-slate-500 italic p-4 bg-white border border-dashed rounded-xl col-span-full text-center">Nenhum ticket encontrado para estes filtros.</p>}
+              </div>
+              <Pagination 
+                currentPage={techAssignedPage} 
+                totalItems={filteredAssigned.length} 
+                itemsPerPage={ITEMS_PER_PAGE} 
+                onPageChange={setTechAssignedPage} 
+              />
+            </section>
+          )}
+
+          {showAvailable && (
+            <section>
+              <h2 className="text-xl font-bold mb-4 text-slate-700 flex items-center gap-2">
+                <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
+                Tickets em Aberto (Disponíveis)
+              </h2>
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {paginatedAvailable.map(t => (
+                  <TechTicketCard 
+                    key={t.id} 
+                    ticket={t} 
+                    onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}
+                    actionButton={
+                      <Button variant="primary" className="text-xs py-1 px-3 bg-emerald-600 hover:bg-emerald-700" onClick={() => acceptTicket(t.id)}>
+                        Aceitar Ticket
+                      </Button>
+                    }
+                  />
+                ))}
+                {filteredAvailable.length === 0 && <p className="text-slate-500 italic p-4 bg-white border border-dashed rounded-xl col-span-full text-center">Nenhum ticket em aberto encontrado para estes filtros.</p>}
+              </div>
+              <Pagination 
+                currentPage={techAvailablePage} 
+                totalItems={filteredAvailable.length} 
+                itemsPerPage={ITEMS_PER_PAGE} 
+                onPageChange={setTechAvailablePage} 
+              />
+            </section>
+          )}
         </div>
       );
     }
@@ -904,6 +1368,7 @@ export default function App() {
       onFinish={(tid) => database.tickets.update(tid, { status: 'completed' })}
       onRate={rateTechnician}
       onDelete={(tid: string) => setDeleteModal({ isOpen: true, ticketId: tid })}
+      onUpdate={(tid: string, updates: any) => database.tickets.update(tid, updates)}
       payment={payments.find(p => p.ticketId === ticket.id)}
     />;
   };
@@ -964,6 +1429,10 @@ export default function App() {
         onCancel={() => setDeleteModal({ isOpen: false, ticketId: null })}
         loading={isDeleting}
       />
+      <SupportModal 
+        isOpen={showSupport} 
+        onClose={() => setShowSupport(false)} 
+      />
       <header className="bg-white border-b sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => setView('dashboard')}>
@@ -979,6 +1448,10 @@ export default function App() {
             {currentUser.role === 'admin' && (
               <Button variant="outline" className="text-xs" onClick={() => setView('admin_logs')}>Logs</Button>
             )}
+            <Button variant="outline" className="text-xs hidden sm:flex items-center gap-1" onClick={() => setShowSupport(true)}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Suporte
+            </Button>
             <Button variant="outline" className="text-xs" onClick={handleLogout}>Sair</Button>
           </div>
         </div>
@@ -1019,19 +1492,42 @@ export default function App() {
         {view === 'admin_logs' && renderAdminLogs()}
       </main>
 
-      <footer className="bg-slate-100 border-t py-6 mt-12 text-center text-slate-400 text-sm">
-        <p>© 2024 RemotoTech - Intermediação de Assistência Técnica Online.</p>
-        <p className="mt-1">Segurança • Transparência • Eficiência</p>
-        <button 
-          onClick={async () => { 
-            await signOut(auth);
-            localStorage.clear(); 
-            window.location.reload(); 
-          }}
-          className="mt-4 text-[10px] uppercase tracking-widest hover:text-red-500 transition-colors"
-        >
-          [ Resetar Dados e Sair ]
-        </button>
+      <footer className="bg-slate-100 border-t py-8 mt-12 text-center text-slate-400 text-sm">
+        <div className="max-w-7xl mx-auto px-4 grid md:grid-cols-3 gap-8 mb-8 text-left">
+          <div>
+            <h4 className="font-bold text-slate-800 mb-3">RemotoTech</h4>
+            <p className="text-xs leading-relaxed">A maior plataforma de intermediação de assistência técnica online do Brasil. Conectando você aos melhores especialistas.</p>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-3">Links Úteis</h4>
+            <ul className="text-xs space-y-2">
+              <li><button onClick={() => setView('dashboard')} className="hover:text-blue-600 transition-colors">Dashboard</button></li>
+              <li><button onClick={() => setShowSupport(true)} className="hover:text-blue-600 transition-colors">Central de Suporte</button></li>
+              <li><button className="hover:text-blue-600 transition-colors">Termos de Uso</button></li>
+              <li><button className="hover:text-blue-600 transition-colors">Privacidade</button></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-3">Contato de Suporte</h4>
+            <p className="text-xs mb-1">E-mail: <span className="text-slate-600">suporte@remototech.com</span></p>
+            <p className="text-xs mb-1">WhatsApp: <span className="text-slate-600">(11) 99999-9999</span></p>
+            <p className="text-[10px] mt-2 italic">Atendimento: Seg-Sex 09h às 18h</p>
+          </div>
+        </div>
+        <div className="border-t border-slate-200 pt-6">
+          <p>© 2024 RemotoTech - Intermediação de Assistência Técnica Online.</p>
+          <p className="mt-1">Segurança • Transparência • Eficiência</p>
+          <button 
+            onClick={async () => { 
+              await signOut(auth);
+              localStorage.clear(); 
+              window.location.reload(); 
+            }}
+            className="mt-4 text-[10px] uppercase tracking-widest hover:text-red-500 transition-colors"
+          >
+            [ Resetar Dados e Sair ]
+          </button>
+        </div>
       </footer>
     </div>
   );
