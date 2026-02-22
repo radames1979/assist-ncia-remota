@@ -7,7 +7,8 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { PLATFORM_FEE_PCT, TICKET_STATUS_LABELS, CATEGORIES, PAYMENT_STATUS_LABELS } from './constants';
 import { analyzeMessageSafety, summarizeAuditLog, suggestCategory } from './services/gemini';
@@ -80,6 +81,66 @@ const ConfirmationModal = ({ isOpen, title, message, onConfirm, onCancel, loadin
 };
 
 // Fix: Changed children type to React.ReactNode to resolve JSX tag's 'children' prop expectation errors when using expressions.
+const DisputeModal = ({ isOpen, onClose, onSubmit }: any) => {
+  const [reason, setReason] = useState('');
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <Card className="w-full max-w-md shadow-2xl">
+        <h3 className="text-xl font-bold mb-4 text-red-600">Abrir Disputa</h3>
+        <p className="text-sm text-slate-500 mb-4">Descreva detalhadamente o problema. Um administrador irá analisar o caso e mediar a situação.</p>
+        <textarea 
+          value={reason} 
+          onChange={e => setReason(e.target.value)}
+          placeholder="Ex: O técnico não resolveu o problema e parou de responder..."
+          className="w-full p-4 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-red-500 outline-none h-32 text-sm mb-4"
+        />
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>
+          <Button variant="danger" className="flex-1" onClick={() => { onSubmit(reason); setReason(''); }}>Abrir Disputa</Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+const TechSelectorModal = ({ isOpen, onClose, technicians, onSelect }: any) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <Card className="w-full max-w-md shadow-2xl">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold">Atribuir Técnico</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+          {technicians.map((tech: User) => (
+            <div 
+              key={tech.uid} 
+              className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-blue-50 cursor-pointer transition-colors border border-transparent hover:border-blue-200"
+              onClick={() => onSelect(tech.uid)}
+            >
+              <div>
+                <p className="font-bold text-sm">{tech.name || 'Técnico sem nome'}</p>
+                <p className="text-xs text-slate-500">{tech.email}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-bold">
+                  ★ {tech.rating?.toFixed(1) || 'N/A'}
+                </span>
+                <Button variant="primary" className="text-[10px] py-1 px-2">Selecionar</Button>
+              </div>
+            </div>
+          ))}
+          {technicians.length === 0 && <p className="text-center text-slate-400 py-4 italic">Nenhum técnico encontrado.</p>}
+        </div>
+      </Card>
+    </div>
+  );
+};
+
 const Badge = ({ children, status }: { children: React.ReactNode, status: string }) => {
   const colors: any = {
     open: "bg-blue-100 text-blue-800",
@@ -320,6 +381,8 @@ const InstitutionalModal = ({ isOpen, page, onClose }: { isOpen: boolean, page: 
           <p>Todos os pagamentos devem ser realizados através da plataforma para garantir a segurança de ambas as partes. O descumprimento desta regra pode levar à suspensão da conta.</p>
           <h4 className="font-bold text-slate-800">3. Responsabilidades</h4>
           <p>O técnico é responsável pela qualidade do serviço prestado. O RemotoTech atua como mediador em caso de disputas.</p>
+          <h4 className="font-bold text-slate-800">4. Taxas</h4>
+          <p>A plataforma cobra uma taxa de intermediação sobre cada serviço concluído com sucesso para manter a infraestrutura e segurança.</p>
         </div>
       )
     },
@@ -331,9 +394,11 @@ const InstitutionalModal = ({ isOpen, page, onClose }: { isOpen: boolean, page: 
           <h4 className="font-bold text-slate-800">1. Coleta de Dados</h4>
           <p>Coletamos seu e-mail, nome e telefone para possibilitar a comunicação e prestação dos serviços.</p>
           <h4 className="font-bold text-slate-800">2. Uso das Informações</h4>
-          <p>Seus dados são utilizados exclusivamente para o funcionamento da plataforma e notificações sobre seus chamados.</p>
+          <p>Seus dados são utilizados exclusivamente para o funcionamento da plataforma, processamento de pagamentos e notificações sobre seus chamados.</p>
           <h4 className="font-bold text-slate-800">3. Segurança</h4>
-          <p>Utilizamos tecnologias de ponta para garantir que seus dados e históricos de chat estejam protegidos.</p>
+          <p>Utilizamos criptografia e tecnologias de ponta para garantir que seus dados e históricos de chat estejam protegidos contra acessos não autorizados.</p>
+          <h4 className="font-bold text-slate-800">4. Compartilhamento</h4>
+          <p>Não vendemos seus dados. O compartilhamento ocorre apenas com os técnicos envolvidos no seu atendimento ou por obrigações legais.</p>
         </div>
       )
     },
@@ -343,15 +408,23 @@ const InstitutionalModal = ({ isOpen, page, onClose }: { isOpen: boolean, page: 
         <div className="space-y-6 text-sm text-slate-600">
           <div>
             <h4 className="font-bold text-slate-800 mb-1">Como funciona o pagamento?</h4>
-            <p>O cliente realiza o PIX para os dados informados pelo técnico. O administrador confirma o recebimento e libera o início do serviço.</p>
+            <p>Você paga via PIX ou Cartão através da plataforma. O dinheiro fica retido com segurança e só é liberado para o técnico após você confirmar a conclusão do serviço.</p>
           </div>
           <div>
-            <h4 className="font-bold text-slate-800 mb-1">O que acontece se o serviço não for concluído?</h4>
-            <p>O cliente pode abrir uma disputa. O administrador analisará o caso e poderá reembolsar o valor ou liberar para o técnico.</p>
+            <h4 className="font-bold text-slate-800 mb-1">O que acontece se o técnico não resolver?</h4>
+            <p>Você pode abrir uma disputa. Nossa equipe de mediação analisará o chat e o serviço para decidir sobre o reembolso total ou parcial.</p>
           </div>
           <div>
-            <h4 className="font-bold text-slate-800 mb-1">Posso falar com o técnico por fora?</h4>
-            <p>Não recomendamos. Conversas fora do chat da plataforma não podem ser usadas como prova em caso de disputa.</p>
+            <h4 className="font-bold text-slate-800 mb-1">É seguro permitir acesso remoto?</h4>
+            <p>Recomendamos o uso de ferramentas conhecidas (como AnyDesk ou TeamViewer) e que você acompanhe todo o processo na tela. Nunca compartilhe senhas bancárias ou dados sensíveis.</p>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-1">Como me torno um técnico?</h4>
+            <p>Basta criar uma conta como "Técnico" e completar seu perfil. Você poderá visualizar chamados disponíveis e enviar propostas.</p>
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 mb-1">Qual o prazo de atendimento?</h4>
+            <p>O prazo depende da disponibilidade do técnico e da complexidade do problema, mas a maioria dos chamados é atendida em menos de 2 horas.</p>
           </div>
         </div>
       )
@@ -394,6 +467,7 @@ const TicketDetailView = ({
   onStartExecution, 
   onDispute, 
   onResolveDispute,
+  onOpenDisputeModal,
   onFinish, 
   onRate,
   onDelete,
@@ -754,10 +828,7 @@ const TicketDetailView = ({
           <Card className="border-red-200">
             <h3 className="font-bold text-red-600 mb-2">Problemas com o serviço?</h3>
             <p className="text-xs text-slate-500 mb-4">Se o técnico não estiver cumprindo o combinado, você pode abrir uma disputa.</p>
-            <Button variant="danger" className="w-full text-sm" onClick={() => {
-              const reason = prompt("Descreva o motivo da disputa:");
-              if (reason) onDispute(ticket.id, reason);
-            }}>Abrir Disputa</Button>
+            <Button variant="danger" className="w-full text-sm" onClick={() => onOpenDisputeModal(ticket.id)}>Abrir Disputa</Button>
           </Card>
         )}
 
@@ -791,15 +862,102 @@ const TicketDetailView = ({
 };
 
 const LandingPage = ({ onStart }: { onStart: () => void }) => (
-  <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-6 text-center">
-    <div className="max-w-3xl">
-      <h1 className="text-5xl font-extrabold text-slate-900 mb-6">Assistência Técnica <span className="text-blue-600">Remota</span></h1>
-      <p className="text-xl text-slate-600 mb-8">Conectando problemas de hardware e software com técnicos especialistas, sem precisar sair de casa.</p>
-      <div className="flex gap-4 justify-center">
-        <Button onClick={onStart} className="text-lg px-8 py-4">Entrar na Plataforma</Button>
+  <div className="min-h-screen bg-white font-sans selection:bg-blue-100">
+    {/* Hero Section */}
+    <header className="max-w-7xl mx-auto px-6 py-8 flex justify-between items-center">
+      <div className="flex items-center gap-2">
+        <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-blue-200">R</div>
+        <span className="font-bold text-2xl tracking-tight text-slate-900">RemotoTech</span>
       </div>
-      <p className="mt-8 text-[10px] text-slate-400 uppercase tracking-widest">Plataforma v1.5.2 - Stripe & Financeiro Ativo</p>
-    </div>
+      <Button onClick={onStart} variant="outline" className="rounded-full px-6">Entrar</Button>
+    </header>
+
+    <main>
+      <section className="max-w-7xl mx-auto px-6 py-20 lg:py-32 grid lg:grid-cols-2 gap-12 items-center">
+        <div className="space-y-8">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold uppercase tracking-wider">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+            </span>
+            Plataforma 100% Segura
+          </div>
+          <h1 className="text-6xl lg:text-7xl font-extrabold text-slate-900 leading-[0.9] tracking-tighter">
+            Assistência Técnica <br />
+            <span className="text-blue-600">Sem Sair de Casa.</span>
+          </h1>
+          <p className="text-xl text-slate-600 max-w-lg leading-relaxed">
+            Conectamos você aos melhores especialistas em hardware e software. Resolva problemas de lentidão, vírus, configuração e muito mais via acesso remoto ou consultoria.
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <Button onClick={onStart} className="text-lg px-10 py-6 rounded-2xl shadow-xl shadow-blue-200 hover:scale-105 transform transition-all">
+              Começar Agora
+            </Button>
+            <Button variant="outline" onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-lg px-10 py-6 rounded-2xl">
+              Saiba Mais
+            </Button>
+          </div>
+          <div className="flex items-center gap-6 pt-4">
+            <div className="flex -space-x-3">
+              {[1,2,3,4].map(i => (
+                <img key={i} src={`https://picsum.photos/seed/user${i}/100/100`} className="w-10 h-10 rounded-full border-2 border-white" alt="User" referrerPolicy="no-referrer" />
+              ))}
+            </div>
+            <p className="text-sm text-slate-500 font-medium">
+              <span className="text-slate-900 font-bold">+2.500</span> clientes satisfeitos
+            </p>
+          </div>
+        </div>
+        <div className="relative">
+          <div className="absolute -inset-4 bg-blue-600/5 rounded-3xl blur-3xl"></div>
+          <Card className="relative border-slate-200 shadow-2xl overflow-hidden p-0 rounded-3xl">
+            <img 
+              src="https://picsum.photos/seed/tech-support/1200/800" 
+              className="w-full h-auto object-cover" 
+              alt="Tech Support" 
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute bottom-6 left-6 right-6 p-6 bg-white/90 backdrop-blur-md rounded-2xl border border-white/20 shadow-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center text-white">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900">Suporte Especializado</p>
+                  <p className="text-sm text-slate-500">Técnicos certificados e avaliados.</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </section>
+
+      <section id="features" className="bg-slate-50 py-24">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="text-center max-w-2xl mx-auto mb-16 space-y-4">
+            <h2 className="text-4xl font-bold text-slate-900 tracking-tight">Por que escolher a RemotoTech?</h2>
+            <p className="text-slate-600">Unimos tecnologia e confiança para oferecer a melhor experiência de suporte técnico do mercado.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              { title: "Pagamento Seguro", desc: "O valor só é liberado para o técnico após você confirmar que o serviço foi concluído.", icon: "🛡️" },
+              { title: "Chat em Tempo Real", desc: "Comunique-se diretamente com o especialista, envie fotos e alinhe detalhes do serviço.", icon: "💬" },
+              { title: "Técnicos Avaliados", desc: "Sistema de ranking e avaliações reais para garantir que você tenha o melhor atendimento.", icon: "⭐" }
+            ].map((f, i) => (
+              <Card key={i} className="p-8 hover:shadow-xl transition-shadow border-none">
+                <div className="text-4xl mb-4">{f.icon}</div>
+                <h3 className="text-xl font-bold mb-2">{f.title}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">{f.desc}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer className="border-t py-12 text-center text-slate-400 text-sm">
+      <p>© 2024 RemotoTech - Intermediação de Assistência Técnica Online.</p>
+    </footer>
   </div>
 );
 
@@ -832,7 +990,6 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         let user = await database.users.getById(userCredential.user.uid);
         
-        // Fallback: If user exists in Auth but not in Firestore (e.g. pre-existing users)
         if (!user) {
           let detectedRole: UserRole = 'client';
           if (email === 'messi@bol.com.br') detectedRole = 'admin';
@@ -859,45 +1016,133 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email) {
+      alert("Por favor, digite seu email primeiro.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Email de recuperação enviado! Verifique sua caixa de entrada.");
+    } catch (error: any) {
+      alert(`Erro: ${error.message}`);
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
-      <Card className="w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center">{isRegister ? 'Criar Conta' : 'Login'}</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
-            <input 
-              type="email" required value={email} onChange={e => setEmail(e.target.value)}
-              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
-            />
+    <div className="min-h-screen flex flex-col lg:flex-row font-sans">
+      {/* Left Side: Info (Desktop Only) */}
+      <div className="hidden lg:flex lg:w-1/2 bg-blue-600 p-12 flex-col justify-between text-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-400/20 rounded-full translate-y-1/2 -translate-x-1/2 blur-3xl"></div>
+        
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 mb-12">
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-blue-600 font-bold text-xl shadow-xl">R</div>
+            <span className="font-bold text-2xl tracking-tight">RemotoTech</span>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Senha</label>
-            <input 
-              type="password" required value={password} onChange={e => setPassword(e.target.value)}
-              className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
-            />
-          </div>
-          {isRegister && (
-            <div>
-              <label className="block text-sm font-medium mb-1">Eu sou um:</label>
-              <select value={role} onChange={e => setRole(e.target.value as any)} className="w-full p-2 border rounded-lg">
-                <option value="client">Cliente (Preciso de Ajuda)</option>
-                <option value="tech">Técnico (Quero Atender)</option>
-              </select>
+          
+          <div className="space-y-8 max-w-md">
+            <h2 className="text-5xl font-extrabold leading-tight tracking-tighter">
+              A maneira mais inteligente de resolver problemas técnicos.
+            </h2>
+            <div className="space-y-6">
+              {[
+                { t: "Segurança Garantida", d: "Pagamentos protegidos e mediação de conflitos inclusa." },
+                { t: "Técnicos de Elite", d: "Acesso a profissionais qualificados em diversas áreas." },
+                { t: "Suporte 24/7", d: "Estamos aqui para ajudar você em qualquer etapa do processo." }
+              ].map((item, i) => (
+                <div key={i} className="flex gap-4">
+                  <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-lg">{item.t}</h4>
+                    <p className="text-blue-100 text-sm">{item.d}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Processando...' : (isRegister ? 'Cadastrar' : 'Entrar')}
-          </Button>
-        </form>
-        <p className="mt-4 text-center text-sm">
-          {isRegister ? 'Já tem conta?' : 'Novo aqui?'} 
-          <button className="text-blue-600 ml-1 font-semibold" onClick={() => setIsRegister(!isRegister)}>
-            {isRegister ? 'Fazer Login' : 'Criar Conta'}
-          </button>
-        </p>
-      </Card>
+          </div>
+        </div>
+
+        <div className="relative z-10 pt-12 border-t border-white/20">
+          <p className="text-sm opacity-70 italic">"A RemotoTech mudou a forma como lidamos com TI na nossa empresa. Rápido, seguro e muito profissional."</p>
+          <p className="mt-2 font-bold">— Carlos Silva, CEO da TechInova</p>
+        </div>
+      </div>
+
+      {/* Right Side: Form */}
+      <div className="flex-1 flex items-center justify-center p-6 bg-slate-50">
+        <Card className="w-full max-w-md shadow-2xl border-none p-8 rounded-3xl">
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-extrabold text-slate-900">{isRegister ? 'Crie sua conta' : 'Bem-vindo de volta'}</h2>
+            <p className="text-slate-500 mt-2">{isRegister ? 'Comece a usar a plataforma hoje mesmo.' : 'Acesse seu painel de controle.'}</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Email</label>
+              <input 
+                type="email" required value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="exemplo@email.com"
+                className="w-full p-4 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+              />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Senha</label>
+                {!isRegister && (
+                  <button type="button" onClick={handleForgotPassword} className="text-[10px] font-bold text-blue-600 hover:underline uppercase tracking-wider">Esqueceu a senha?</button>
+                )}
+              </div>
+              <input 
+                type="password" required value={password} onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full p-4 bg-slate-100 border-none rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+              />
+            </div>
+            {isRegister && (
+              <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Eu sou um:</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    type="button"
+                    onClick={() => setRole('client')}
+                    className={`p-4 rounded-2xl border-2 transition-all text-sm font-bold ${role === 'client' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                  >
+                    👤 Cliente
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setRole('tech')}
+                    className={`p-4 rounded-2xl border-2 transition-all text-sm font-bold ${role === 'tech' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                  >
+                    🛠️ Técnico
+                  </button>
+                </div>
+              </div>
+            )}
+            <Button type="submit" className="w-full py-4 rounded-2xl text-lg shadow-lg shadow-blue-100" disabled={loading}>
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Processando...</span>
+                </div>
+              ) : (isRegister ? 'Criar Conta' : 'Entrar na Conta')}
+            </Button>
+          </form>
+
+          <div className="mt-8 pt-8 border-t border-slate-100 text-center">
+            <p className="text-sm text-slate-500">
+              {isRegister ? 'Já possui uma conta?' : 'Ainda não tem conta?'} 
+              <button className="text-blue-600 ml-2 font-bold hover:underline" onClick={() => setIsRegister(!isRegister)}>
+                {isRegister ? 'Fazer Login' : 'Cadastre-se grátis'}
+              </button>
+            </p>
+          </div>
+        </Card>
+      </div>
     </div>
   );
 };
@@ -929,6 +1174,10 @@ export default function App() {
   const [profilePhone, setProfilePhone] = useState('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
+  const [assigningTicketId, setAssigningTicketId] = useState<string | null>(null);
+  const [disputingTicketId, setDisputingTicketId] = useState<string | null>(null);
+  const [technicians, setTechnicians] = useState<User[]>([]);
 
   // Auth State Listener
   useEffect(() => {
@@ -988,9 +1237,15 @@ export default function App() {
 
   // Real-time Listeners
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setDataLoading(false);
+      return;
+    }
 
-    const unsubTickets = database.tickets.listenAll(setTickets);
+    const unsubTickets = database.tickets.listenAll((data) => {
+      setTickets(data);
+      setDataLoading(false);
+    });
     const unsubPayments = database.payments.listenAll(setPayments);
     const unsubNotifications = database.notifications.listen(currentUser.uid, setNotifications);
     
@@ -1005,6 +1260,14 @@ export default function App() {
       unsubNotifications();
       unsubLogs();
     };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser?.role === 'admin') {
+      database.users.getAll().then(users => {
+        setTechnicians(users.filter(u => u.role === 'tech'));
+      });
+    }
   }, [currentUser]);
 
   const handleLogout = async () => {
@@ -1466,15 +1729,9 @@ export default function App() {
                   <p className="text-sm text-slate-600 mb-4 line-clamp-2">{t.description}</p>
                   <div className="flex gap-2 items-center">
                     {!t.techId && (
-                      <Button variant="outline" className="text-sm" onClick={async () => {
-                        const techEmail = prompt("Digite o email do técnico para atribuir:");
-                        if (techEmail) {
-                          const allUsers = await database.users.getAll();
-                          const tech = allUsers.find(u => u.email === techEmail && u.role === 'tech');
-                          if (tech) assignTech(t.id, tech.uid);
-                          else alert("Técnico não encontrado.");
-                        }
-                      }}>Atribuir Técnico</Button>
+                      <Button variant="outline" className="text-sm" onClick={() => setAssigningTicketId(t.id)}>
+                        Atribuir Técnico
+                      </Button>
                     )}
                     <Button variant="outline" className="text-sm" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>Ver Detalhes</Button>
                   </div>
@@ -1500,59 +1757,96 @@ export default function App() {
       );
       return (
         <div className="space-y-8">
-          <Card className="bg-blue-600 text-white border-none">
-            <h2 className="text-xl font-bold mb-4">Precisa de assistência técnica?</h2>
-            <form onSubmit={async (e: any) => {
-              e.preventDefault();
-              const imageFile = e.target.image.files[0];
-              await createTicket(e.target.title.value, e.target.description.value, e.target.category.value, imageFile);
-              e.target.reset();
-            }} className="space-y-4">
-              <div className="grid md:grid-cols-2 gap-4">
-                <input name="title" placeholder="Resumo do problema" className="p-2 rounded text-slate-900 w-full" required />
-                <select name="category" className="p-2 rounded text-slate-900 w-full" required>
-                  <option value="Outros">Auto-Categorizar (IA)</option>
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          <div className="grid lg:grid-cols-3 gap-8">
+            <Card className="lg:col-span-1 bg-blue-600 text-white border-none p-8 rounded-3xl shadow-xl shadow-blue-100 h-fit sticky top-24">
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              </div>
+              <h2 className="text-2xl font-extrabold mb-2 leading-tight">Criar Novo Chamado</h2>
+              <p className="text-blue-100 text-sm mb-8">Descreva seu problema e nossa IA ajudará a categorizar para o melhor técnico.</p>
+              
+              <form onSubmit={async (e: any) => {
+                e.preventDefault();
+                const imageFile = e.target.image.files[0];
+                await createTicket(e.target.title.value, e.target.description.value, e.target.category.value, imageFile);
+                e.target.reset();
+              }} className="space-y-4">
+                <input name="title" placeholder="Título do problema" className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder:text-white/50 outline-none focus:bg-white/20 transition-all" required />
+                <select name="category" className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white outline-none focus:bg-white/20 transition-all appearance-none" required>
+                  <option value="Outros" className="text-slate-900">Auto-Categorizar (IA)</option>
+                  {CATEGORIES.map(c => <option key={c} value={c} className="text-slate-900">{c}</option>)}
                 </select>
-              </div>
-              <textarea name="description" placeholder="Descreva o que está acontecendo..." className="p-2 rounded text-slate-900 w-full h-24" required />
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold opacity-80">Anexar Foto do Problema (Opcional):</label>
-                <input type="file" name="image" accept="image/*" className="text-xs" />
-              </div>
-              <Button type="submit" variant="secondary" className="w-full md:w-auto" disabled={isCategorizing}>
-                {isCategorizing ? 'Analisando...' : 'Criar Chamado'}
-              </Button>
-            </form>
-          </Card>
+                <textarea name="description" placeholder="Descreva os detalhes..." className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder:text-white/50 outline-none focus:bg-white/20 transition-all h-32 resize-none" required />
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest opacity-70">Anexar Foto (Opcional)</label>
+                  <input type="file" name="image" accept="image/*" className="block w-full text-xs text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-white/20 file:text-white hover:file:bg-white/30 cursor-pointer" />
+                </div>
+                <Button type="submit" variant="secondary" className="w-full py-4 rounded-2xl font-bold shadow-lg" disabled={isCategorizing}>
+                  {isCategorizing ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+                      <span>Analisando...</span>
+                    </div>
+                  ) : 'Enviar Chamado'}
+                </Button>
+              </form>
+            </Card>
 
-          <section>
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-              <h2 className="text-2xl font-bold">Seus Chamados</h2>
-              <div className="relative w-full md:w-64">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                <input 
-                  type="text" 
-                  placeholder="Buscar seus chamados..." 
-                  className="w-full pl-10 pr-4 py-2 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
+            <div className="lg:col-span-2 space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Seus Chamados</h2>
+                <div className="relative w-full md:w-72">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                  <input 
+                    type="text" 
+                    placeholder="Pesquisar chamados..." 
+                    className="w-full pl-12 pr-4 py-3 bg-white border-none rounded-2xl shadow-sm focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4">
+                {filteredMyTickets.map(t => (
+                  <Card key={t.id} className="group hover:shadow-xl transition-all border-none p-6 rounded-3xl cursor-pointer" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.id}</span>
+                          <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">{t.category}</span>
+                        </div>
+                        <h3 className="font-bold text-xl text-slate-900 group-hover:text-blue-600 transition-colors">{t.title}</h3>
+                      </div>
+                      <Badge status={t.status}>{TICKET_STATUS_LABELS[t.status]}</Badge>
+                    </div>
+                    <p className="text-sm text-slate-500 mb-6 line-clamp-2 leading-relaxed">{t.description}</p>
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500">
+                          {t.techId ? '🛠️' : '⏳'}
+                        </div>
+                        <span className="text-xs text-slate-400 font-medium">
+                          {t.techId ? 'Técnico Atribuído' : 'Aguardando Técnico'}
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
+                        Ver Detalhes
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                      </span>
+                    </div>
+                  </Card>
+                ))}
+                {filteredMyTickets.length === 0 && (
+                  <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-slate-100">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-2xl">🎫</div>
+                    <p className="text-slate-400 font-medium">Nenhum chamado encontrado.</p>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="grid md:grid-cols-2 gap-4">
-              {filteredMyTickets.map(t => (
-                <Card key={t.id} className="hover:border-blue-300 transition-colors cursor-pointer" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-bold text-lg">{t.title}</h3>
-                    <Badge status={t.status}>{TICKET_STATUS_LABELS[t.status]}</Badge>
-                  </div>
-                  <p className="text-sm text-slate-500">Categoria: {t.category}</p>
-                </Card>
-              ))}
-              {filteredMyTickets.length === 0 && <p className="text-slate-500 italic">Nenhum chamado encontrado.</p>}
-            </div>
-          </section>
+          </div>
         </div>
       );
     }
@@ -1780,6 +2074,7 @@ export default function App() {
       onStartExecution={(tid) => database.tickets.update(tid, { status: 'in_progress' })}
       onDispute={disputeTicket}
       onResolveDispute={resolveDispute}
+      onOpenDisputeModal={(tid: string) => setDisputingTicketId(tid)}
       onFinish={(tid) => database.tickets.update(tid, { status: 'completed' })}
       onRate={rateTechnician}
       onDelete={(tid: string) => setDeleteModal({ isOpen: true, ticketId: tid })}
@@ -1927,6 +2222,27 @@ export default function App() {
         isOpen={showSupport} 
         onClose={() => setShowSupport(false)} 
       />
+      <TechSelectorModal 
+        isOpen={!!assigningTicketId}
+        technicians={technicians}
+        onClose={() => setAssigningTicketId(null)}
+        onSelect={(techId: string) => {
+          if (assigningTicketId) {
+            assignTech(assigningTicketId, techId);
+            setAssigningTicketId(null);
+          }
+        }}
+      />
+      <DisputeModal 
+        isOpen={!!disputingTicketId}
+        onClose={() => setDisputingTicketId(null)}
+        onSubmit={(reason: string) => {
+          if (disputingTicketId) {
+            disputeTicket(disputingTicketId, reason);
+            setDisputingTicketId(null);
+          }
+        }}
+      />
       <InstitutionalModal 
         isOpen={!!institutionalPage} 
         page={institutionalPage} 
@@ -1997,10 +2313,19 @@ export default function App() {
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8">
-        {view === 'dashboard' && renderDashboard()}
-        {view === 'ticket' && renderTicketDetail()}
-        {view === 'admin_logs' && renderAdminLogs()}
-        {view === 'profile' && renderProfile()}
+        {dataLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 space-y-4">
+            <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-slate-400 font-medium animate-pulse">Carregando seus dados...</p>
+          </div>
+        ) : (
+          <>
+            {view === 'dashboard' && renderDashboard()}
+            {view === 'ticket' && renderTicketDetail()}
+            {view === 'admin_logs' && renderAdminLogs()}
+            {view === 'profile' && renderProfile()}
+          </>
+        )}
       </main>
 
       <footer className="bg-slate-100 border-t py-8 mt-12 text-center text-slate-400 text-sm">
