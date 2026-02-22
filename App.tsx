@@ -217,7 +217,7 @@ const Pagination = ({ currentPage, totalItems, itemsPerPage, onPageChange }: any
 
       <div className="flex items-center gap-1">
         {getPageNumbers().map((page, idx) => (
-          <React.Fragment key={idx}>
+          <React.Fragment key={`${page}-${idx}`}>
             {page === '...' ? (
               <span className="px-1 sm:px-2 text-slate-400 text-xs sm:text-sm">...</span>
             ) : (

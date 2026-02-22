@@ -24,7 +24,7 @@ export const database = {
       if (!uid) return null;
       const docRef = doc(db, "users", uid);
       const docSnap = await getDoc(docRef);
-      return docSnap.exists() ? docSnap.data() as User : null;
+      return docSnap.exists() ? { ...docSnap.data(), uid } as User : null;
     },
     getAll: async () => {
       const querySnapshot = await getDocs(collection(db, "users"));
@@ -112,10 +112,13 @@ export const database = {
   notifications: {
     listen: (userId: string, callback: (notifications: AppNotification[]) => void) => {
       if (!userId) return () => {};
+      // Removed orderBy to avoid composite index requirement, sorting in memory instead
       return onSnapshot(
-        query(collection(db, "notifications"), where("userId", "==", userId), orderBy("createdAt", "desc")),
+        query(collection(db, "notifications"), where("userId", "==", userId)),
         (snapshot) => {
-          callback(snapshot.docs.map(doc => doc.data() as AppNotification));
+          const notifications = snapshot.docs.map(doc => doc.data() as AppNotification);
+          notifications.sort((a, b) => b.createdAt - a.createdAt);
+          callback(notifications);
         },
         (error) => console.error("Notifications listener error:", error)
       );
