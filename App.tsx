@@ -10,6 +10,7 @@ import {
   onAuthStateChanged 
 } from 'firebase/auth';
 import { PLATFORM_FEE_PCT, TICKET_STATUS_LABELS, CATEGORIES, PAYMENT_STATUS_LABELS } from './constants';
+import { analyzeMessageSafety, summarizeAuditLog, suggestCategory } from './services/gemini';
 
 // --- UI Components ---
 
@@ -797,6 +798,7 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => (
       <div className="flex gap-4 justify-center">
         <Button onClick={onStart} className="text-lg px-8 py-4">Entrar na Plataforma</Button>
       </div>
+      <p className="mt-8 text-[10px] text-slate-400 uppercase tracking-widest">Plataforma v1.5.2 - Stripe & Financeiro Ativo</p>
     </div>
   </div>
 );
@@ -823,7 +825,9 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
           createdAt: Date.now() 
         };
         await database.users.save(newUser);
-        onLogin(newUser);
+        const cleanRole = newUser.role.toLowerCase().replace(/['"]+/g, '').trim() as UserRole;
+        const normalizedUser = { ...newUser, role: cleanRole };
+        onLogin(normalizedUser);
       } else {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         let user = await database.users.getById(userCredential.user.uid);
@@ -844,7 +848,9 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
           await database.users.save(user);
         }
         
-        onLogin(user);
+        const cleanRole = user.role.toLowerCase().replace(/['"]+/g, '').trim() as UserRole;
+        const normalizedUser = { ...user, role: cleanRole };
+        onLogin(normalizedUser);
       }
     } catch (error: any) {
       alert(`Erro: ${error.message}`);
@@ -909,6 +915,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [institutionalPage, setInstitutionalPage] = useState<'terms' | 'privacy' | 'faq' | null>(null);
+  const [isCategorizing, setIsCategorizing] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, ticketId: string | null }>({ isOpen: false, ticketId: null });
   const [isDeleting, setIsDeleting] = useState(false);
@@ -928,11 +935,15 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         const user = await database.users.getById(firebaseUser.uid);
-        setCurrentUser(user);
         if (user) {
+          const cleanRole = (user.role || 'client').toLowerCase().replace(/['"]+/g, '').trim() as UserRole;
+          const normalizedUser = { ...user, role: cleanRole };
+          setCurrentUser(normalizedUser);
           setProfileName(user.name || '');
           setProfilePhone(user.phone || '');
           setView('dashboard');
+        } else {
+          setCurrentUser(null);
         }
       } else {
         setCurrentUser(null);
@@ -1002,14 +1013,18 @@ export default function App() {
     setView('landing');
   };
 
-  const createTicket = async (title: string, description: string, category: string, imageFile?: File) => {
+  const createTicket = async (title: string, description: string, manualCategory: string, imageFile?: File) => {
     if (!currentUser) return;
+    setIsCategorizing(true);
     
     let imageUrl = '';
     if (imageFile) {
       imageUrl = await fileToBase64(imageFile);
     }
 
+    // Gemini Auto-categorization
+    const category = manualCategory === "Outros" ? await suggestCategory(description) : manualCategory;
+    
     const newTicket: Ticket = {
       id: `t-${Date.now()}`,
       clientId: currentUser.uid,
@@ -1039,6 +1054,8 @@ export default function App() {
         link: newTicket.id
       });
     });
+
+    setIsCategorizing(false);
   };
 
   const disputeTicket = async (ticketId: string, reason: string) => {
@@ -1158,6 +1175,13 @@ export default function App() {
   const sendMessage = async (ticketId: string, text: string) => {
     if (!currentUser) return;
     
+    // Smart Moderation with Gemini
+    const safety = await analyzeMessageSafety(text);
+    if (!safety.isSafe) {
+      alert(`Mensagem bloqueada: ${safety.reason}`);
+      return;
+    }
+
     const newMessage: Message = {
       id: `m-${Date.now()}`,
       senderId: currentUser.uid,
@@ -1296,13 +1320,16 @@ export default function App() {
   const renderDashboard = () => {
     if (!currentUser) return null;
 
-    if (currentUser.role === 'admin') {
+    const role = (currentUser.role || '').toLowerCase().replace(/['"]+/g, '').trim();
+    console.log("Rendering Dashboard for role:", role);
+
+    if (role === 'admin') {
       const pendingPayments = payments.filter(p => p.status === 'proof_submitted');
       const disputedTickets = tickets.filter(t => t.status === 'disputed');
       const filteredTickets = tickets.filter(t => 
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.id.toLowerCase().includes(searchQuery.toLowerCase())
+        (t.title?.toLowerCase() || "").includes(searchQuery.toLowerCase()) || 
+        (t.description?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+        (t.id?.toLowerCase() || "").includes(searchQuery.toLowerCase())
       );
       const allTickets = filteredTickets;
       
@@ -1465,11 +1492,11 @@ export default function App() {
       );
     }
 
-    if (currentUser.role === 'client') {
+    if (role === 'client') {
       const myTickets = tickets.filter(t => t.clientId === currentUser.uid);
       const filteredMyTickets = myTickets.filter(t => 
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        t.description.toLowerCase().includes(searchQuery.toLowerCase())
+        (t.title?.toLowerCase() || "").includes(searchQuery.toLowerCase()) || 
+        (t.description?.toLowerCase() || "").includes(searchQuery.toLowerCase())
       );
       return (
         <div className="space-y-8">
@@ -1484,6 +1511,7 @@ export default function App() {
               <div className="grid md:grid-cols-2 gap-4">
                 <input name="title" placeholder="Resumo do problema" className="p-2 rounded text-slate-900 w-full" required />
                 <select name="category" className="p-2 rounded text-slate-900 w-full" required>
+                  <option value="Outros">Auto-Categorizar (IA)</option>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
@@ -1492,8 +1520,8 @@ export default function App() {
                 <label className="text-xs font-bold opacity-80">Anexar Foto do Problema (Opcional):</label>
                 <input type="file" name="image" accept="image/*" className="text-xs" />
               </div>
-              <Button type="submit" variant="secondary" className="w-full md:w-auto">
-                Criar Chamado
+              <Button type="submit" variant="secondary" className="w-full md:w-auto" disabled={isCategorizing}>
+                {isCategorizing ? 'Analisando...' : 'Criar Chamado'}
               </Button>
             </form>
           </Card>
@@ -1529,7 +1557,7 @@ export default function App() {
       );
     }
 
-    if (currentUser.role === 'tech') {
+    if (role === 'tech') {
       const myAssignedTickets = tickets.filter(t => t.techId === currentUser.uid);
       const availableTickets = tickets.filter(t => t.status === 'open' && !t.techId);
       
@@ -1710,6 +1738,27 @@ export default function App() {
         </div>
       );
     }
+
+    return (
+      <div className="p-12 text-center bg-white rounded-2xl border-2 border-dashed border-slate-200 shadow-inner">
+        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <h3 className="text-xl font-bold text-slate-800 mb-2">Perfil não configurado</h3>
+        <p className="text-slate-500 mb-6 max-w-md mx-auto">
+          Não encontramos conteúdo específico para o seu nível de acesso: <span className="font-mono font-bold text-blue-600 px-2 py-1 bg-blue-50 rounded">{role}</span>.
+        </p>
+        <div className="text-xs text-slate-400 font-mono bg-slate-50 p-4 rounded-lg inline-block text-left">
+          <p className="font-bold mb-1 border-b pb-1">Debug Info:</p>
+          <p>UID: {currentUser.uid}</p>
+          <p>Email: {currentUser.email}</p>
+          <p>Role: {currentUser.role}</p>
+          <p>Normalized Role: {role}</p>
+          <p>Tickets: {tickets.length}</p>
+          <p>Payments: {payments.length}</p>
+        </div>
+      </div>
+    );
   };
 
   const renderTicketDetail = () => {
@@ -1883,10 +1932,10 @@ export default function App() {
         page={institutionalPage} 
         onClose={() => setInstitutionalPage(null)} 
       />
-      <header className="bg-white border-b sticky top-0 z-50">
+      <header className="bg-blue-600 border-b sticky top-0 z-50 text-white">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => { setView('dashboard'); setSearchQuery(''); }}>
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white font-bold">R</div>
+            <div className="w-8 h-8 bg-white rounded flex items-center justify-center text-blue-600 font-bold">R</div>
             <span className="font-bold text-xl tracking-tight hidden sm:inline">RemotoTech</span>
           </div>
           <div className="flex items-center gap-4">
@@ -1895,25 +1944,25 @@ export default function App() {
               onClick={() => setShowNotifications(!showNotifications)} 
             />
             <div 
-              className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded-lg transition-colors"
+              className="flex items-center gap-2 cursor-pointer hover:bg-blue-700 p-1 rounded-lg transition-colors"
               onClick={() => setView('profile')}
             >
-              <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 font-bold text-xs">
+              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white font-bold text-xs">
                 {currentUser.name ? currentUser.name.substring(0, 1).toUpperCase() : (currentUser.email?.substring(0, 1).toUpperCase() || '?')}
               </div>
               <div className="hidden md:flex flex-col">
-                <span className="text-xs font-bold text-slate-800 leading-none">{currentUser.name || 'Seu Perfil'}</span>
-                <span className="text-[10px] text-slate-500 uppercase font-bold">{currentUser.role}</span>
+                <span className="text-xs font-bold text-white leading-none">{currentUser.name || 'Seu Perfil'}</span>
+                <span className="text-[10px] text-blue-200 uppercase font-bold">{currentUser.role}</span>
               </div>
             </div>
-            {currentUser.role === 'admin' && (
-              <Button variant="outline" className="text-xs" onClick={() => setView('admin_logs')}>Logs</Button>
+            {currentUser.role.toLowerCase() === 'admin' && (
+              <Button variant="outline" className="text-xs border-white text-white hover:bg-blue-700" onClick={() => setView('admin_logs')}>Logs</Button>
             )}
-            <Button variant="outline" className="text-xs hidden sm:flex items-center gap-1" onClick={() => setShowSupport(true)}>
+            <Button variant="outline" className="text-xs hidden sm:flex items-center gap-1 border-white text-white hover:bg-blue-700" onClick={() => setShowSupport(true)}>
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               Suporte
             </Button>
-            <Button variant="outline" className="text-xs" onClick={handleLogout}>Sair</Button>
+            <Button variant="outline" className="text-xs border-white text-white hover:bg-blue-700" onClick={handleLogout}>Sair</Button>
           </div>
         </div>
         
