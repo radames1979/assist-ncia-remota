@@ -1759,7 +1759,7 @@ export default function App() {
         <div className="space-y-8">
           <div className="grid lg:grid-cols-3 gap-8">
             <Card className="lg:col-span-1 bg-blue-600 text-white border-none p-8 rounded-3xl shadow-xl shadow-blue-100 h-fit sticky top-24">
-              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-12 h-12 bg-blue-700/50 rounded-2xl flex items-center justify-center mb-6">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               </div>
               <h2 className="text-2xl font-extrabold mb-2 leading-tight">Criar Novo Chamado</h2>
@@ -1771,15 +1771,15 @@ export default function App() {
                 await createTicket(e.target.title.value, e.target.description.value, e.target.category.value, imageFile);
                 e.target.reset();
               }} className="space-y-4">
-                <input name="title" placeholder="Título do problema" className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder:text-white/50 outline-none focus:bg-white/20 transition-all" required />
-                <select name="category" className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white outline-none focus:bg-white/20 transition-all appearance-none" required>
+                <input name="title" placeholder="Título do problema" className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white placeholder:text-blue-100 outline-none focus:bg-blue-700/60 transition-all" required />
+                <select name="category" className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white outline-none focus:bg-blue-700/60 transition-all appearance-none" required>
                   <option value="Outros" className="text-slate-900">Auto-Categorizar (IA)</option>
                   {CATEGORIES.map(c => <option key={c} value={c} className="text-slate-900">{c}</option>)}
                 </select>
-                <textarea name="description" placeholder="Descreva os detalhes..." className="w-full p-4 bg-white/10 border border-white/20 rounded-2xl text-white placeholder:text-white/50 outline-none focus:bg-white/20 transition-all h-32 resize-none" required />
+                <textarea name="description" placeholder="Descreva os detalhes..." className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white placeholder:text-blue-100 outline-none focus:bg-blue-700/60 transition-all h-32 resize-none" required />
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest opacity-70">Anexar Foto (Opcional)</label>
-                  <input type="file" name="image" accept="image/*" className="block w-full text-xs text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-white/20 file:text-white hover:file:bg-white/30 cursor-pointer" />
+                  <input type="file" name="image" accept="image/*" className="block w-full text-xs text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-700/50 file:text-white hover:file:bg-blue-700/70 cursor-pointer" />
                 </div>
                 <Button type="submit" variant="secondary" className="w-full py-4 rounded-2xl font-bold shadow-lg" disabled={isCategorizing}>
                   {isCategorizing ? (
@@ -1861,13 +1861,13 @@ export default function App() {
       const filteredAssigned = myAssignedTickets.filter(t => {
         const statusMatch = techFilter === 'all' ? true : t.status === techFilter;
         const categoryMatch = techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
-        const searchMatch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        const searchMatch = (t.title?.toLowerCase() || "").includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase() || "").includes(searchQuery.toLowerCase());
         return statusMatch && categoryMatch && searchMatch;
       });
 
       const filteredAvailable = availableTickets.filter(t => {
         const categoryMatch = techCategoryFilter === 'all' ? true : t.category === techCategoryFilter;
-        const searchMatch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
+        const searchMatch = (t.title?.toLowerCase() || "").includes(searchQuery.toLowerCase()) || (t.description?.toLowerCase() || "").includes(searchQuery.toLowerCase());
         return categoryMatch && searchMatch;
       });
 
