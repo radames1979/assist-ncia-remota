@@ -110,7 +110,7 @@ const TechSelectorModal = ({ isOpen, onClose, technicians, onSelect }: any) => {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <Card className="w-full max-w-md shadow-2xl">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-xl font-bold">Atribuir Técnico</h3>
+          <h3 className="text-xl font-bold">Atribuir Analista</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -123,7 +123,7 @@ const TechSelectorModal = ({ isOpen, onClose, technicians, onSelect }: any) => {
               onClick={() => onSelect(tech.uid)}
             >
               <div>
-                <p className="font-bold text-sm">{tech.name || 'Técnico sem nome'}</p>
+                <p className="font-bold text-sm">{tech.name || 'Analista sem nome'}</p>
                 <p className="text-xs text-slate-500">{tech.email}</p>
               </div>
               <div className="flex items-center gap-2">
@@ -143,19 +143,20 @@ const TechSelectorModal = ({ isOpen, onClose, technicians, onSelect }: any) => {
 
 const Badge = ({ children, status }: { children: React.ReactNode, status: string }) => {
   const colors: any = {
-    open: "bg-blue-100 text-blue-800",
-    assigned: "bg-indigo-100 text-indigo-800",
-    awaiting_payment: "bg-amber-100 text-amber-800",
-    paid: "bg-green-100 text-green-800",
-    in_progress: "bg-purple-100 text-purple-800",
-    completed: "bg-emerald-100 text-emerald-800",
-    cancelled: "bg-slate-100 text-slate-800",
-    confirmed: "bg-green-100 text-green-800",
-    rejected: "bg-red-100 text-red-800",
-    proof_submitted: "bg-blue-100 text-blue-800",
-    pending: "bg-slate-100 text-slate-800"
+    open: "bg-blue-100 text-blue-900",
+    pending_tech_acceptance: "bg-cyan-100 text-cyan-900",
+    assigned: "bg-indigo-100 text-indigo-900",
+    awaiting_payment: "bg-amber-100 text-amber-900",
+    paid: "bg-green-100 text-green-900",
+    in_progress: "bg-purple-100 text-purple-900",
+    completed: "bg-emerald-100 text-emerald-900",
+    cancelled: "bg-slate-200 text-slate-900",
+    confirmed: "bg-green-100 text-green-900",
+    rejected: "bg-red-100 text-red-900",
+    proof_submitted: "bg-blue-100 text-blue-900",
+    pending: "bg-slate-200 text-slate-900"
   };
-  return <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${colors[status] || "bg-gray-100"}`}>{children}</span>;
+  return <span className={`px-2 py-1 rounded text-[10px] font-extrabold uppercase tracking-wider ${colors[status] || "bg-gray-100"}`}>{children}</span>;
 };
 
 const TechTicketCard = ({ ticket, onClick, actionButton }: { ticket: Ticket, onClick: () => void, actionButton?: React.ReactNode, key?: any }) => {
@@ -186,8 +187,8 @@ const TechTicketCard = ({ ticket, onClick, actionButton }: { ticket: Ticket, onC
           </div>
           {ticket.techId && (
             <div className="flex items-center gap-2 text-xs text-blue-600 font-medium">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" title="Técnico"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              <span className="truncate">Técnico: {tech?.email || 'Carregando...'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" title="Analista"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              <span className="truncate">Analista: {tech?.email || 'Carregando...'}</span>
             </div>
           )}
           <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -420,7 +421,7 @@ const InstitutionalModal = ({ isOpen, page, onClose }: { isOpen: boolean, page: 
           </div>
           <div>
             <h4 className="font-bold text-slate-800 mb-1">Como me torno um técnico?</h4>
-            <p>Basta criar uma conta como "Técnico" e completar seu perfil. Você poderá visualizar chamados disponíveis e enviar propostas.</p>
+            <p>Basta criar uma conta como "Analista" e completar seu perfil. Você poderá visualizar chamados disponíveis e enviar propostas.</p>
           </div>
           <div>
             <h4 className="font-bold text-slate-800 mb-1">Qual o prazo de atendimento?</h4>
@@ -473,11 +474,15 @@ const TicketDetailView = ({
   onDelete,
   onUpdate,
   onPayWithStripe,
+  onAccept,
+  onReject,
+  onAssign,
   isProcessingPayment,
   payment
 }: any) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [client, setClient] = useState<User | null>(null);
+  const [tech, setTech] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(ticket.title);
   const [editDescription, setEditDescription] = useState(ticket.description);
@@ -488,8 +493,13 @@ const TicketDetailView = ({
   useEffect(() => {
     const unsub = database.chats.listenMessages(ticket.id, setMessages);
     database.users.getById(ticket.clientId).then(setClient);
+    if (ticket.techId) {
+      database.users.getById(ticket.techId).then(setTech);
+    } else {
+      setTech(null);
+    }
     return () => unsub();
-  }, [ticket.id]);
+  }, [ticket.id, ticket.techId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -561,6 +571,28 @@ const TicketDetailView = ({
           )}
         </Card>
 
+        <Card className="bg-slate-50 border-slate-200">
+          <h3 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600"><path d="M12 2v20"/><path d="m17 5-5-3-5 3"/><path d="m17 19-5 3-5-3"/><path d="M2 12h20"/><path d="m5 7-3 5 3 5"/><path d="m19 7 3 5-3 5"/></svg>
+            Status do Processo
+          </h3>
+          <div className="flex justify-between items-center relative">
+            <div className="absolute left-0 right-0 h-0.5 bg-slate-200 top-1/2 -translate-y-1/2 z-0"></div>
+            {[
+              { label: 'Aberto', active: true },
+              { label: 'Analista', active: !!ticket.techId },
+              { label: 'Pagamento', active: !!payment },
+              { label: 'Execução', active: ticket.status === 'in_progress' || ticket.status === 'completed' },
+              { label: 'Fim', active: ticket.status === 'completed' }
+            ].map((step, i) => (
+              <div key={i} className="relative z-10 flex flex-col items-center gap-1">
+                <div className={`w-4 h-4 rounded-full border-2 ${step.active ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}></div>
+                <span className={`text-[9px] font-bold uppercase ${step.active ? 'text-blue-700' : 'text-slate-400'}`}>{step.label}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
         <Card className="flex flex-col h-[500px] border-slate-200 shadow-lg">
           <div className="flex justify-between items-center mb-4 border-b pb-2">
             <h3 className="font-bold text-lg flex items-center gap-2">
@@ -579,7 +611,7 @@ const TicketDetailView = ({
                 }`}>
                   <div className="flex justify-between items-center gap-4 mb-1">
                     <p className={`text-[10px] font-bold uppercase tracking-wider ${m.senderId === currentUser.uid ? 'text-blue-100' : 'text-slate-500'}`}>
-                      {m.senderRole === 'tech' ? '🛠️ Técnico' : m.senderRole === 'client' ? '👤 Cliente' : '🛡️ Admin'}
+                      {m.senderRole === 'tech' ? '🛠️ Analista' : m.senderRole === 'client' ? '👤 Cliente' : '🛡️ Admin'}
                     </p>
                     <p className={`text-[9px] opacity-70 ${m.senderId === currentUser.uid ? 'text-blue-100' : 'text-slate-400'}`}>
                       {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -620,30 +652,91 @@ const TicketDetailView = ({
 
       <div className="space-y-6">
         {(currentUser.role === 'admin' || currentUser.role === 'tech') && client && (
-          <Card className="border-blue-100 bg-blue-50/30">
-            <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
+          <Card className="border-blue-200 bg-blue-50/50">
+            <h3 className="font-bold text-lg mb-3 flex items-center gap-2 text-blue-900">
               👤 Informações do Cliente
             </h3>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Email:</span>
-                <span className="font-medium">{client.email}</span>
+              <div className="flex justify-between border-b border-blue-100 pb-1">
+                <span className="text-slate-600 font-semibold">Nome:</span>
+                <span className="font-bold text-slate-900">{client.name || 'Não informado'}</span>
+              </div>
+              <div className="flex justify-between border-b border-blue-100 pb-1">
+                <span className="text-slate-600 font-semibold">Email:</span>
+                <span className="font-bold text-slate-900">{client.email}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Membro desde:</span>
-                <span className="font-medium">{new Date(client.createdAt).toLocaleDateString()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">ID do Usuário:</span>
-                <span className="font-mono text-[10px]">{client.uid}</span>
+                <span className="text-slate-600 font-semibold">Telefone:</span>
+                <span className="font-bold text-slate-900">{client.phone || 'Não informado'}</span>
               </div>
             </div>
           </Card>
         )}
 
-        <Card>
-          <h3 className="font-bold text-lg mb-4">Informações de Pagamento</h3>
-          {!payment && currentUser.role === 'tech' && (
+        {tech && (currentUser.role === 'admin' || currentUser.role === 'tech' || ['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status)) && (
+          <Card className="border-emerald-200 bg-emerald-50/50">
+            <h3 className="font-bold text-lg mb-3 flex items-center gap-2 text-emerald-900">
+              🛠️ Informações do Analista
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between border-b border-emerald-100 pb-1">
+                <span className="text-slate-600 font-semibold">Nome:</span>
+                <span className="font-bold text-slate-900">{tech.name || 'Não informado'}</span>
+              </div>
+              <div className="flex justify-between border-b border-emerald-100 pb-1">
+                <span className="text-slate-600 font-semibold">Email:</span>
+                <span className="font-bold text-slate-900">{tech.email}</span>
+              </div>
+              <div className="flex justify-between border-b border-emerald-100 pb-1">
+                <span className="text-slate-600 font-semibold">Telefone:</span>
+                <span className="font-bold text-slate-900">{tech.phone || 'Não informado'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-600 font-semibold">Avaliação:</span>
+                <span className="font-bold text-emerald-700">⭐ {tech.rating?.toFixed(1) || 'N/A'}</span>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {tech && currentUser.role === 'client' && !['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status) && (
+          <Card className="bg-slate-200 border-slate-300">
+            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+              🔒 Dados do Analista Protegidos
+            </h3>
+            <p className="text-xs text-slate-700 mt-2 font-medium">Os dados de contato do analista serão liberados automaticamente após a confirmação do pagamento pelo Admin.</p>
+          </Card>
+        )}
+
+        <Card className="border-slate-300 shadow-md">
+          <h3 className="font-bold text-xl mb-4 text-slate-900 border-b pb-2">Ações e Pagamento</h3>
+          
+          {ticket.status === 'open' && currentUser.role === 'admin' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 italic">Este chamado ainda não possui um analista atribuído.</p>
+              <Button className="w-full" onClick={() => onAssign(ticket.id)}>Atribuir Analista Agora</Button>
+            </div>
+          )}
+
+          {ticket.status === 'pending_tech_acceptance' && currentUser.role === 'admin' && (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-500 italic">Aguardando o analista aceitar o chamado.</p>
+              <Button variant="outline" className="w-full" onClick={() => onAssign(ticket.id)}>Trocar Analista</Button>
+            </div>
+          )}
+
+          {ticket.status === 'pending_tech_acceptance' && currentUser.role === 'tech' && (
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 space-y-4 mb-4">
+              <p className="text-sm font-bold text-blue-800">Você foi selecionado para este chamado!</p>
+              <p className="text-xs text-blue-600">Analise o problema e decida se deseja aceitar o atendimento.</p>
+              <div className="flex gap-2">
+                <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => onAccept(ticket.id)}>Aceitar</Button>
+                <Button variant="danger" className="flex-1" onClick={() => onReject(ticket.id)}>Não Aceitar</Button>
+              </div>
+            </div>
+          )}
+
+          {!payment && currentUser.role === 'tech' && (ticket.status === 'assigned' || ticket.status === 'pending_tech_acceptance') && (
             <div className="space-y-4">
               <p className="text-sm text-slate-500 italic">Defina o orçamento e os dados de pagamento PIX para o cliente.</p>
               <div>
@@ -683,7 +776,11 @@ const TicketDetailView = ({
           )}
 
           {!payment && currentUser.role === 'client' && (
-            <p className="text-slate-500 italic">Aguardando orçamento do técnico.</p>
+            <p className="text-slate-700 font-medium italic bg-slate-50 p-3 rounded border border-slate-100">Aguardando orçamento do analista.</p>
+          )}
+
+          {!payment && currentUser.role === 'admin' && (
+            <p className="text-slate-700 font-medium italic bg-slate-50 p-3 rounded border border-slate-100">Aguardando o analista enviar o orçamento.</p>
           )}
 
           {payment && (
@@ -773,6 +870,44 @@ const TicketDetailView = ({
                   <Button className="w-full mt-2" onClick={() => onStartExecution(ticket.id)}>Iniciar Execução</Button>
                 </div>
               )}
+
+              {currentUser.role === 'admin' && payment && payment.status === 'pending' && (
+                <div className="bg-amber-100 text-amber-900 p-4 rounded-xl border border-amber-200 shadow-sm">
+                  <p className="text-sm font-bold flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    Aguardando Pagamento do Cliente
+                  </p>
+                  <p className="text-xs mt-1 text-amber-700">O orçamento de R$ {payment.amountTotal.toFixed(2)} foi enviado. O cliente ainda não anexou o comprovante.</p>
+                </div>
+              )}
+
+              {currentUser.role === 'admin' && payment.status === 'proof_submitted' && (
+                <div className="pt-4 border-t space-y-4">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <p className="text-xs font-bold text-blue-700 mb-2 uppercase tracking-wider">Comprovante Enviado:</p>
+                    <div className="bg-white p-3 rounded border text-sm italic mb-3">
+                      {payment.proofText || 'Nenhum texto enviado'}
+                    </div>
+                    {payment.proofImageUrl && (
+                      <img src={payment.proofImageUrl} alt="Comprovante" className="max-w-full h-auto rounded border mb-3" />
+                    )}
+                    <div className="flex gap-2">
+                      <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => onConfirmPayment(payment.id)}>Confirmar Pagamento</Button>
+                      <Button variant="danger" className="flex-1" onClick={() => onRejectPayment(payment.id)}>Rejeitar</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentUser.role === 'admin' && payment.status === 'confirmed' && (
+                <div className="bg-emerald-100 text-emerald-900 p-4 rounded-xl border border-emerald-200 shadow-sm">
+                  <p className="text-sm font-bold flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    Pagamento Confirmado
+                  </p>
+                  <p className="text-xs mt-1 text-emerald-700">O analista já pode iniciar o serviço e os dados de contato foram liberados para o cliente.</p>
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -803,12 +938,12 @@ const TicketDetailView = ({
                   variant="primary" 
                   className="text-xs py-3 bg-emerald-600 hover:bg-emerald-700"
                   onClick={() => {
-                    if (confirm("Confirmar liberação ao técnico? O ticket será concluído.")) {
+                    if (confirm("Confirmar liberação ao analista? O ticket será concluído.")) {
                       onResolveDispute(ticket.id, 'tech');
                     }
                   }}
                 >
-                  Liberar para Técnico
+                  Liberar para Analista
                 </Button>
               </div>
             </div>
@@ -838,7 +973,7 @@ const TicketDetailView = ({
 
         {ticket.status === 'completed' && currentUser.role === 'client' && !ticket.rating && (
           <Card className="bg-amber-50 border-amber-200">
-            <h3 className="font-bold text-amber-800 mb-2">Avalie o Técnico</h3>
+            <h3 className="font-bold text-amber-800 mb-2">Avalie o Analista</h3>
             <p className="text-xs text-amber-700 mb-4">Sua avaliação ajuda a manter a qualidade da plataforma.</p>
             <div className="space-y-4">
               <StarRating rating={0} onRate={(r) => {
@@ -923,8 +1058,8 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => (
                   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                 </div>
                 <div>
-                  <p className="font-bold text-slate-900">Suporte Especializado</p>
-                  <p className="text-sm text-slate-500">Técnicos certificados e avaliados.</p>
+                  <p className="font-bold text-slate-900">Analistas Especializados</p>
+                  <p className="text-sm text-slate-500">Analistas certificados e avaliados.</p>
                 </div>
               </div>
             </div>
@@ -940,9 +1075,9 @@ const LandingPage = ({ onStart }: { onStart: () => void }) => (
           </div>
           <div className="grid md:grid-cols-3 gap-8">
             {[
-              { title: "Pagamento Seguro", desc: "O valor só é liberado para o técnico após você confirmar que o serviço foi concluído.", icon: "🛡️" },
+              { title: "Pagamento Seguro", desc: "O valor só é liberado para o analista após você confirmar que o serviço foi concluído.", icon: "🛡️" },
               { title: "Chat em Tempo Real", desc: "Comunique-se diretamente com o especialista, envie fotos e alinhe detalhes do serviço.", icon: "💬" },
-              { title: "Técnicos Avaliados", desc: "Sistema de ranking e avaliações reais para garantir que você tenha o melhor atendimento.", icon: "⭐" }
+              { title: "Analistas Avaliados", desc: "Sistema de ranking e avaliações reais para garantir que você tenha o melhor atendimento.", icon: "⭐" }
             ].map((f, i) => (
               <Card key={i} className="p-8 hover:shadow-xl transition-shadow border-none">
                 <div className="text-4xl mb-4">{f.icon}</div>
@@ -1049,7 +1184,7 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
             <div className="space-y-6">
               {[
                 { t: "Segurança Garantida", d: "Pagamentos protegidos e mediação de conflitos inclusa." },
-                { t: "Técnicos de Elite", d: "Acesso a profissionais qualificados em diversas áreas." },
+                { t: "Analistas de Elite", d: "Acesso a profissionais qualificados em diversas áreas." },
                 { t: "Suporte 24/7", d: "Estamos aqui para ajudar você em qualquer etapa do processo." }
               ].map((item, i) => (
                 <div key={i} className="flex gap-4">
@@ -1118,7 +1253,7 @@ const AuthPage = ({ onLogin }: { onLogin: (u: User) => void }) => {
                     onClick={() => setRole('tech')}
                     className={`p-4 rounded-2xl border-2 transition-all text-sm font-bold ${role === 'tech' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
                   >
-                    🛠️ Técnico
+                    🛠️ Analista
                   </button>
                 </div>
               </div>
@@ -1363,8 +1498,8 @@ export default function App() {
   };
 
   const assignTech = async (ticketId: string, techId: string) => {
-    await database.tickets.update(ticketId, { techId, status: 'assigned' });
-    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'ASSIGN_TECH', targetRef: ticketId, details: `Tech: ${techId}`, createdAt: Date.now() });
+    await database.tickets.update(ticketId, { techId, status: 'pending_tech_acceptance' });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser?.uid || '', action: 'ASSIGN_TECH', targetRef: ticketId, details: `Analista: ${techId}`, createdAt: Date.now() });
   };
 
   const acceptTicket = async (ticketId: string) => {
@@ -1379,13 +1514,19 @@ export default function App() {
     await database.notifications.add({
       id: `n-${Date.now()}-${ticket.clientId}`,
       userId: ticket.clientId,
-      title: "Técnico Atribuído",
-      message: `O técnico ${currentUser.email} aceitou seu chamado "${ticket.title}".`,
+      title: "Analista Atribuído",
+      message: `O analista ${currentUser.name || currentUser.email} aceitou seu chamado "${ticket.title}".`,
       type: 'info',
       read: false,
       createdAt: Date.now(),
       link: ticket.id
     });
+  };
+
+  const rejectTicket = async (ticketId: string) => {
+    if (!currentUser || currentUser.role !== 'tech') return;
+    await database.tickets.update(ticketId, { techId: null, status: 'open' });
+    await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'REJECT_TICKET', targetRef: ticketId, createdAt: Date.now() });
   };
 
   const setBudget = async (ticketId: string, amount: number, pixKey?: string, pixQRCode?: string) => {
@@ -1618,12 +1759,12 @@ export default function App() {
               <p className="text-xs opacity-60 uppercase font-bold mb-1">Volume Total</p>
               <p className="text-2xl font-bold">R$ {financials.totalVolume.toFixed(2)}</p>
             </Card>
-            <Card className="bg-blue-600 text-white">
-              <p className="text-xs opacity-60 uppercase font-bold mb-1">Receita Plataforma</p>
+            <Card className="bg-blue-700 text-white border-none shadow-lg shadow-blue-100">
+              <p className="text-xs opacity-90 uppercase font-bold mb-1">Receita Plataforma</p>
               <p className="text-2xl font-bold">R$ {financials.platformRevenue.toFixed(2)}</p>
             </Card>
-            <Card className="bg-emerald-600 text-white">
-              <p className="text-xs opacity-60 uppercase font-bold mb-1">Pagos a Técnicos</p>
+            <Card className="bg-emerald-700 text-white border-none shadow-lg shadow-emerald-100">
+              <p className="text-xs opacity-90 uppercase font-bold mb-1">Pagos a Analistas</p>
               <p className="text-2xl font-bold">R$ {financials.techPayouts.toFixed(2)}</p>
             </Card>
             <Card className="bg-slate-100">
@@ -1730,7 +1871,7 @@ export default function App() {
                   <div className="flex gap-2 items-center">
                     {!t.techId && (
                       <Button variant="outline" className="text-sm" onClick={() => setAssigningTicketId(t.id)}>
-                        Atribuir Técnico
+                        Atribuir Analista
                       </Button>
                     )}
                     <Button variant="outline" className="text-sm" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>Ver Detalhes</Button>
@@ -1763,7 +1904,7 @@ export default function App() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
               </div>
               <h2 className="text-2xl font-extrabold mb-2 leading-tight">Criar Novo Chamado</h2>
-              <p className="text-blue-100 text-sm mb-8">Descreva seu problema e nossa IA ajudará a categorizar para o melhor técnico.</p>
+              <p className="text-white text-sm mb-8 opacity-90">Descreva seu problema e nossa IA ajudará a categorizar para o melhor analista.</p>
               
               <form onSubmit={async (e: any) => {
                 e.preventDefault();
@@ -1771,12 +1912,17 @@ export default function App() {
                 await createTicket(e.target.title.value, e.target.description.value, e.target.category.value, imageFile);
                 e.target.reset();
               }} className="space-y-4">
-                <input name="title" placeholder="Título do problema" className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white placeholder:text-blue-100 outline-none focus:bg-blue-700/60 transition-all" required />
-                <select name="category" className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white outline-none focus:bg-blue-700/60 transition-all appearance-none" required>
-                  <option value="Outros" className="text-slate-900">Auto-Categorizar (IA)</option>
-                  {CATEGORIES.map(c => <option key={c} value={c} className="text-slate-900">{c}</option>)}
-                </select>
-                <textarea name="description" placeholder="Descreva os detalhes..." className="w-full p-4 bg-blue-700/40 border border-white/20 rounded-2xl text-white placeholder:text-blue-100 outline-none focus:bg-blue-700/60 transition-all h-32 resize-none" required />
+                <input name="title" placeholder="Título do problema" className="w-full p-4 bg-blue-700/60 border border-white/30 rounded-2xl text-white placeholder:text-blue-200 outline-none focus:bg-blue-800/60 transition-all font-medium" required />
+                <div className="relative">
+                  <select name="category" className="w-full p-4 bg-blue-700/60 border border-white/30 rounded-2xl text-white outline-none focus:bg-blue-800/60 transition-all appearance-none font-medium" required>
+                    <option value="Outros" className="text-slate-900">Auto-Categorizar (IA)</option>
+                    {CATEGORIES.map(c => <option key={c} value={c} className="text-slate-900">{c}</option>)}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/60">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                  </div>
+                </div>
+                <textarea name="description" placeholder="Descreva os detalhes..." className="w-full p-4 bg-blue-700/60 border border-white/30 rounded-2xl text-white placeholder:text-blue-200 outline-none focus:bg-blue-800/60 transition-all h-32 resize-none font-medium" required />
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest opacity-70">Anexar Foto (Opcional)</label>
                   <input type="file" name="image" accept="image/*" className="block w-full text-xs text-white file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-blue-700/50 file:text-white hover:file:bg-blue-700/70 cursor-pointer" />
@@ -1828,7 +1974,7 @@ export default function App() {
                           {t.techId ? '🛠️' : '⏳'}
                         </div>
                         <span className="text-xs text-slate-400 font-medium">
-                          {t.techId ? 'Técnico Atribuído' : 'Aguardando Técnico'}
+                          {t.techId ? 'Analista Atribuído' : 'Aguardando Analista'}
                         </span>
                       </div>
                       <span className="text-xs font-bold text-blue-600 group-hover:translate-x-1 transition-transform flex items-center gap-1">
@@ -1933,7 +2079,7 @@ export default function App() {
 
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div>
-              <h2 className="text-2xl font-bold text-slate-800">Painel do Técnico</h2>
+              <h2 className="text-2xl font-bold text-slate-800">Painel do Analista</h2>
               <p className="text-sm text-slate-500">Gerencie seus atendimentos e encontre novos chamados.</p>
             </div>
             <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
@@ -1956,6 +2102,7 @@ export default function App() {
                 >
                   <option value="all">Todos</option>
                   <option value="open">Aberto (Disponíveis)</option>
+                  <option value="pending_tech_acceptance">Pendente Aceite</option>
                   <option value="assigned">Atribuído</option>
                   <option value="in_progress">Em Execução</option>
                   <option value="completed">Concluído</option>
@@ -2080,6 +2227,9 @@ export default function App() {
       onDelete={(tid: string) => setDeleteModal({ isOpen: true, ticketId: tid })}
       onUpdate={(tid: string, updates: any) => database.tickets.update(tid, updates)}
       onPayWithStripe={handlePayWithStripe}
+      onAccept={acceptTicket}
+      onReject={rejectTicket}
+      onAssign={setAssigningTicketId}
       isProcessingPayment={isProcessingPayment}
       payment={payments.find(p => p.ticketId === ticket.id)}
     />;
@@ -2145,7 +2295,7 @@ export default function App() {
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-500 uppercase">Função</label>
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-blue-700 font-bold uppercase text-xs">
-                  {currentUser.role === 'admin' ? 'Administrador' : currentUser.role === 'tech' ? 'Técnico' : 'Cliente'}
+                  {currentUser.role === 'admin' ? 'Administrador' : currentUser.role === 'tech' ? 'Analista' : 'Cliente'}
                 </div>
               </div>
               <div className="space-y-2">
@@ -2180,7 +2330,7 @@ export default function App() {
 
         {currentUser.role === 'tech' && (
           <Card className="bg-blue-600 text-white border-none">
-            <h3 className="font-bold text-lg mb-2">Estatísticas de Técnico</h3>
+            <h3 className="font-bold text-lg mb-2">Estatísticas de Analista</h3>
             <div className="grid grid-cols-2 gap-4 mt-4">
               <div className="bg-white/10 p-4 rounded-xl">
                 <p className="text-xs opacity-70 uppercase font-bold">Avaliação Média</p>

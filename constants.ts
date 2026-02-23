@@ -12,13 +12,15 @@ export const CATEGORIES = [
 ];
 
 export const TICKET_STATUS_LABELS: Record<string, string> = {
-  open: "Aberto",
-  assigned: "Técnico Atribuído",
+  open: "Aguardando Análise Admin",
+  pending_tech_acceptance: "Aguardando Analista",
+  assigned: "Analista Atribuído",
   awaiting_payment: "Aguardando Pagamento",
-  paid: "Pago / Liberado",
-  in_progress: "Em Execução",
+  paid: "Pagamento Confirmado",
+  in_progress: "Em Execução / Dados Liberados",
   completed: "Concluído",
-  cancelled: "Cancelado"
+  cancelled: "Cancelado",
+  disputed: "Em Disputa"
 };
 
 export const PAYMENT_STATUS_LABELS: Record<string, string> = {

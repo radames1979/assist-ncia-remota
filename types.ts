@@ -13,7 +13,7 @@ export interface User {
   totalRatings?: number;
 }
 
-export type TicketStatus = 'open' | 'assigned' | 'awaiting_payment' | 'paid' | 'in_progress' | 'completed' | 'cancelled' | 'disputed';
+export type TicketStatus = 'open' | 'pending_tech_acceptance' | 'assigned' | 'awaiting_payment' | 'paid' | 'in_progress' | 'completed' | 'cancelled' | 'disputed';
 
 export interface Ticket {
   id: string;
