@@ -120,7 +120,11 @@ const TechSelectorModal = ({ isOpen, onClose, technicians, onSelect }: any) => {
             <div 
               key={tech.uid} 
               className="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-blue-50 cursor-pointer transition-colors border border-transparent hover:border-blue-200"
-              onClick={() => onSelect(tech.uid)}
+              onClick={() => {
+                if (confirm(`Deseja atribuir o analista ${tech.name || tech.email} a este chamado?`)) {
+                  onSelect(tech.uid);
+                }
+              }}
             >
               <div>
                 <p className="font-bold text-sm">{tech.name || 'Analista sem nome'}</p>
@@ -673,7 +677,7 @@ const TicketDetailView = ({
           </Card>
         )}
 
-        {tech && (currentUser.role === 'admin' || currentUser.role === 'tech' || ['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status)) && (
+        {tech && (currentUser.role === 'admin' || currentUser.role === 'tech' || ['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status)) ? (
           <Card className="border-emerald-200 bg-emerald-50/50">
             <h3 className="font-bold text-lg mb-3 flex items-center gap-2 text-emerald-900">
               🛠️ Informações do Analista
@@ -697,9 +701,7 @@ const TicketDetailView = ({
               </div>
             </div>
           </Card>
-        )}
-
-        {tech && currentUser.role === 'client' && !['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status) && (
+        ) : ticket.techId && currentUser.role === 'client' && !['paid', 'in_progress', 'completed', 'disputed'].includes(ticket.status) && (
           <Card className="bg-slate-200 border-slate-300">
             <h3 className="font-bold text-slate-800 flex items-center gap-2">
               🔒 Dados do Analista Protegidos
@@ -878,6 +880,14 @@ const TicketDetailView = ({
                     Aguardando Pagamento do Cliente
                   </p>
                   <p className="text-xs mt-1 text-amber-700">O orçamento de R$ {payment.amountTotal.toFixed(2)} foi enviado. O cliente ainda não anexou o comprovante.</p>
+                  <div className="mt-4 pt-4 border-t border-amber-200">
+                    <p className="text-[10px] font-bold uppercase mb-2">Ação Manual (Admin):</p>
+                    <Button className="w-full bg-amber-600 hover:bg-amber-700 text-xs" onClick={() => {
+                      if (confirm("Confirmar pagamento manualmente sem comprovante?")) {
+                        onConfirmPayment(payment.id);
+                      }
+                    }}>Confirmar Pagamento Manualmente</Button>
+                  </div>
                 </div>
               )}
 
@@ -1507,7 +1517,13 @@ export default function App() {
     const ticket = tickets.find(t => t.id === ticketId);
     if (!ticket) return;
 
-    await database.tickets.update(ticketId, { techId: currentUser.uid, status: 'assigned' });
+    // Enforce that only assigned analysts can accept
+    if (ticket.status !== 'pending_tech_acceptance' || ticket.techId !== currentUser.uid) {
+      alert("Este chamado não está atribuído a você ou já foi aceito.");
+      return;
+    }
+
+    await database.tickets.update(ticketId, { status: 'assigned' });
     await database.logs.add({ id: `l-${Date.now()}`, actorId: currentUser.uid, action: 'ACCEPT_TICKET', targetRef: ticketId, createdAt: Date.now() });
 
     // Notify Client
@@ -2134,6 +2150,13 @@ export default function App() {
                     key={t.id} 
                     ticket={t} 
                     onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }} 
+                    actionButton={
+                      t.status === 'pending_tech_acceptance' && (
+                        <Button variant="primary" className="text-xs py-1 px-3 bg-emerald-600 hover:bg-emerald-700 w-full mt-2" onClick={(e) => { e.stopPropagation(); acceptTicket(t.id); }}>
+                          Aceitar Chamado
+                        </Button>
+                      )
+                    }
                   />
                 ))}
                 {filteredAssigned.length === 0 && <p className="text-slate-500 italic p-4 bg-white border border-dashed rounded-xl col-span-full text-center">Nenhum ticket encontrado para estes filtros.</p>}
@@ -2151,7 +2174,7 @@ export default function App() {
             <section>
               <h2 className="text-xl font-bold mb-4 text-slate-700 flex items-center gap-2">
                 <span className="w-2 h-6 bg-emerald-500 rounded-full"></span>
-                Tickets em Aberto (Disponíveis)
+                Tickets em Aberto (Aguardando Admin)
               </h2>
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {paginatedAvailable.map(t => (
@@ -2160,8 +2183,8 @@ export default function App() {
                     ticket={t} 
                     onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}
                     actionButton={
-                      <Button variant="primary" className="text-xs py-1 px-3 bg-emerald-600 hover:bg-emerald-700" onClick={() => acceptTicket(t.id)}>
-                        Aceitar Ticket
+                      <Button variant="outline" className="text-xs py-1 px-3" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>
+                        Ver Detalhes
                       </Button>
                     }
                   />
@@ -2231,7 +2254,7 @@ export default function App() {
       onReject={rejectTicket}
       onAssign={setAssigningTicketId}
       isProcessingPayment={isProcessingPayment}
-      payment={payments.find(p => p.ticketId === ticket.id)}
+      payment={payments.filter(p => p.ticketId === ticket.id).sort((a, b) => b.createdAt - a.createdAt)[0]}
     />;
   };
 
