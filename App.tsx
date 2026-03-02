@@ -56,8 +56,8 @@ const Button = ({ children, onClick, variant = 'primary', className = '', disabl
   );
 };
 
-const Card = ({ children, className = "" }: any) => (
-  <div className={`bg-white border border-slate-200 rounded-xl shadow-sm p-6 ${className}`}>
+const Card = ({ children, className = "", onClick }: any) => (
+  <div onClick={onClick} className={`bg-white border border-slate-200 rounded-xl shadow-sm p-6 ${className}`}>
     {children}
   </div>
 );
@@ -1410,7 +1410,10 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.role === 'admin') {
       database.users.getAll().then(users => {
-        setTechnicians(users.filter(u => u.role === 'tech'));
+        setTechnicians(users.filter(u => {
+          const role = (u.role || '').toLowerCase().replace(/['"]+/g, '').trim();
+          return role === 'tech';
+        }));
       });
     }
   }, [currentUser]);
@@ -1885,9 +1888,9 @@ export default function App() {
                   </div>
                   <p className="text-sm text-slate-600 mb-4 line-clamp-2">{t.description}</p>
                   <div className="flex gap-2 items-center">
-                    {!t.techId && (
+                    {(t.status === 'open' || t.status === 'pending_tech_acceptance') && (
                       <Button variant="outline" className="text-sm" onClick={() => setAssigningTicketId(t.id)}>
-                        Atribuir Analista
+                        {t.techId ? 'Reatribuir Analista' : 'Atribuir Analista'}
                       </Button>
                     )}
                     <Button variant="outline" className="text-sm" onClick={() => { setSelectedTicketId(t.id); setView('ticket'); }}>Ver Detalhes</Button>
